@@ -180,7 +180,7 @@ export function createRpcHandlers(
       const session = createSession()
       const client = createClient(session)
       const data = await dispatch(client, rpcRequest, session, method)
-      return Response.json({ data })
+      return Response.json({ data: data ?? null })
     } catch (error) {
       return Response.json(errorBody(error), { status: errorStatus(error) })
     }

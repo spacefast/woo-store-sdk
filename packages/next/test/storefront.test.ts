@@ -195,6 +195,22 @@ describe('RPC handlers', () => {
     expect(postResponse.status).toBe(200)
     expect(await postResponse.json()).toEqual({ data: {} })
   })
+
+  it('serializes void mutation results as data: null so the RPC envelope survives', async () => {
+    const storefront = createStorefront({ url: 'https://woo.test', sessionSecret: 'test-secret' })
+    const response = await storefront.handlers.POST(
+      new Request('https://app.test/api/store/rpc', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ op: 'auth.logout' }),
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toEqual({ data: null })
+    expect(Object.prototype.hasOwnProperty.call(body, 'data')).toBe(true)
+  })
 })
 
 describe('cookie sessions', () => {

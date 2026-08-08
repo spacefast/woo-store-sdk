@@ -393,7 +393,7 @@ function rpcHandler(
         throw new RpcProtocolError('Mutations must use POST')
       }
       const data = await executeRpc(client, rpc)
-      return Response.json({ data }, { headers: { 'Cache-Control': 'no-store' } })
+      return Response.json({ data: data ?? null }, { headers: { 'Cache-Control': 'no-store' } })
     } catch (error) {
       return errorResponse(error)
     }

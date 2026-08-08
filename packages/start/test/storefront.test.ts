@@ -187,6 +187,27 @@ describe('Start storefront RPC route', () => {
       },
     })
   })
+
+  it('serializes void mutation results as data: null so the RPC envelope survives', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({}))
+    const storefront = createStorefront({
+      url: 'https://woo.test',
+      sessionSecret,
+      fetch: fetchMock,
+    })
+    const response = await storefront.serverRoute.handlers.POST({
+      request: new Request('https://app.test/api/store/rpc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'auth.logout' }),
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toEqual({ data: null })
+    expect(Object.prototype.hasOwnProperty.call(body, 'data')).toBe(true)
+  })
 })
 
 describe('direct server access and caching', () => {
