@@ -1,0 +1,32 @@
+{
+  "name": "@woo/storefront-next",
+  "version": "0.1.0",
+  "description": "Next.js adapter: route handler factory, cookie session, cache tag wiring.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@woo/storefront-core": "workspace:*",
+    "@woo/storefront-react": "workspace:*"
+  },
+  "peerDependencies": {
+    "next": ">=15",
+    "react": ">=18",
+    "@tanstack/react-query": ">=5"
+  }
+}

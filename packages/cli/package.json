@@ -1,0 +1,26 @@
+{
+  "name": "woo-storefront",
+  "version": "0.1.0",
+  "description": "CLI: `woo-storefront init` scaffolds headless Woo into a Next.js or TanStack Start app.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "bin": {
+    "woo-storefront": "./dist/index.js"
+  }
+}

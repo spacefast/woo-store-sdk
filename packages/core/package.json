@@ -1,0 +1,23 @@
+{
+  "name": "@woo/storefront-core",
+  "version": "0.1.0",
+  "description": "Framework-agnostic WooCommerce Store API client with TanStack Query option factories, cache profiles, and session model.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}
