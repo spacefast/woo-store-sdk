@@ -4,6 +4,9 @@
   "description": "CLI: `woo-storefront init` scaffolds headless Woo into a Next.js or TanStack Start app.",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,5 +25,8 @@
   },
   "bin": {
     "woo-storefront": "./dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.17"
   }
 }

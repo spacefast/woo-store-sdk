@@ -10,10 +10,12 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
+    "preserveSymlinks": true,
     "jsx": "react-jsx",
+    "baseUrl": ".",
     "paths": {
-      "@woo/storefront-core": ["../core/src/index.ts"],
-      "@woo/storefront-react": ["../react/src/index.ts"]
+      "@woo/storefront-core": ["./packages/core/src/index.ts"],
+      "@woo/storefront-react": ["./packages/react/src/index.ts"]
     }
   }
 }
