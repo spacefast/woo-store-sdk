@@ -3,6 +3,8 @@ import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 
 import { BuyButtons, type BuyButtonVariant } from "@/components/product-detail/buy-buttons";
+import { BundleComponents, BundleParents } from "@/components/product-detail/bundle-components";
+import { ComplementaryProducts } from "@/components/product-detail/complementary-products";
 import { ProductOpenGraph } from "@/components/product-detail/open-graph";
 import {
   ProductInfoDescription,
@@ -226,6 +228,7 @@ async function ProductInfoArea({
 
       {eagerSelection ? (
         <BuyButtons
+          buyNow={shopConfig.pdp.buyNow.isEnabled}
           selectedVariant={toBuyButtonVariant(eagerSelection.selectedVariant)}
           title={title}
           handle={handle}
@@ -236,6 +239,7 @@ async function ProductInfoArea({
       ) : (
         <Suspense fallback={<BuyButtonsFallback t={buyFallbackT} allInStock={allInStock} />}>
           <ResolvedBuyButtons
+            buyNow={shopConfig.pdp.buyNow.isEnabled}
             title={title}
             handle={handle}
             featuredImage={featuredImage}
@@ -245,6 +249,14 @@ async function ProductInfoArea({
           />
         </Suspense>
       )}
+
+      {shopConfig.pdp.bundles.isEnabled ? (
+        <BundleRelationships variant={product.defaultVariant} t={t} />
+      ) : null}
+
+      {shopConfig.pdp.complementaryProducts.isEnabled ? (
+        <ComplementaryProducts handle={handle} limit={4} locale={locale} title={t("pairsWith")} />
+      ) : null}
 
       <ProductInfoDescription descriptionHtml={descriptionHtml} />
     </div>
@@ -310,6 +322,7 @@ function toBuyButtonVariant(variant: ProductVariant | undefined): BuyButtonVaria
 }
 
 async function ResolvedBuyButtons({
+  buyNow,
   availableForSale,
   featuredImage,
   handle,
@@ -317,6 +330,7 @@ async function ResolvedBuyButtons({
   title,
   variantPromise,
 }: {
+  buyNow: boolean;
   availableForSale: boolean;
   featuredImage: ProductDetails["featuredImage"];
   handle: string;
@@ -327,6 +341,7 @@ async function ResolvedBuyButtons({
   const selectedVariant = await variantPromise;
   return (
     <BuyButtons
+      buyNow={buyNow}
       selectedVariant={toBuyButtonVariant(selectedVariant)}
       title={title}
       handle={handle}
@@ -334,6 +349,23 @@ async function ResolvedBuyButtons({
       availableForSale={availableForSale}
       quantityPicker={quantityPicker}
     />
+  );
+}
+
+function BundleRelationships({
+  variant,
+  t,
+}: {
+  variant: ProductVariant | undefined;
+  t: Awaited<ReturnType<typeof getTranslations<"product">>>;
+}) {
+  if (!variant) return null;
+  if (variant.components.length === 0 && variant.bundleParents.length === 0) return null;
+  return (
+    <div className="grid gap-5">
+      <BundleComponents components={variant.components} title={t("bundleIncludes")} />
+      <BundleParents variants={variant.bundleParents} title={t("availableInBundles")} />
+    </div>
   );
 }
 

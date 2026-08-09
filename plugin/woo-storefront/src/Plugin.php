@@ -27,6 +27,7 @@ final class Plugin {
 			new Branding(),
 			new CheckoutUrl(),
 			new CheckoutEntry(),
+			new Sessions(),
 			$auth,
 			new Accounts( $auth ),
 			new Webhooks(),

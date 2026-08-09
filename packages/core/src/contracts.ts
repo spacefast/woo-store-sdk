@@ -327,6 +327,7 @@ export interface StorefrontClient {
     get(): WooQueryOptions<Customer>
     orders(params?: { page?: number; perPage?: number }): WooQueryOptions<{ items: OrderSummary[]; total: number }>
     order(id: number): WooQueryOptions<Order>
+    updateProfile: WooMutationOptions<Customer, { firstName: string; lastName: string }>
     updateAddress: WooMutationOptions<Customer, { type: 'billing' | 'shipping'; address: Address }>
   }
 }

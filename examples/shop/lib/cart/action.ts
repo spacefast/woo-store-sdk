@@ -12,7 +12,7 @@ export async function buyNowAction(
     return { checkoutUrl: null, error: "Quantity must be between 1 and 99" };
   }
   await woo.cart.addItem.mutationFn({ id, quantity });
-  return { checkoutUrl: await woo.cart.checkoutUrl() };
+  return { checkoutUrl: "/checkout" };
 }
 
 export async function prepareCheckoutAction(): Promise<{ checkoutUrl: string | null }> {

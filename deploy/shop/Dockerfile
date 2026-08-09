@@ -6,8 +6,9 @@ WORKDIR /app
 COPY . .
 RUN pnpm install --frozen-lockfile
 ARG WOO_STORE_URL
-RUN WOO_STORE_URL="$WOO_STORE_URL" WOO_SESSION_SECRET="build-only-session-secret-not-used-at-runtime" pnpm build \
-    && WOO_STORE_URL="$WOO_STORE_URL" WOO_SESSION_SECRET="build-only-session-secret-not-used-at-runtime" pnpm build:shop
+ARG WOO_CUSTOMER_ACCOUNTS_ENABLED=false
+RUN WOO_STORE_URL="$WOO_STORE_URL" WOO_SESSION_SECRET="build-only-session-secret-not-used-at-runtime" WOO_CUSTOMER_ACCOUNTS_ENABLED="$WOO_CUSTOMER_ACCOUNTS_ENABLED" pnpm build \
+    && WOO_STORE_URL="$WOO_STORE_URL" WOO_SESSION_SECRET="build-only-session-secret-not-used-at-runtime" WOO_CUSTOMER_ACCOUNTS_ENABLED="$WOO_CUSTOMER_ACCOUNTS_ENABLED" pnpm build:shop
 
 ENV NODE_ENV=production
 EXPOSE 3000

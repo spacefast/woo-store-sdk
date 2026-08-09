@@ -1,4 +1,7 @@
 export interface ShopConfig {
+  agent: {
+    isEnabled: boolean;
+  };
   analytics: {
     speedInsights: {
       isEnabled: boolean;
@@ -7,7 +10,19 @@ export interface ShopConfig {
       isEnabled: boolean;
     };
   };
+  auth: {
+    isEnabled: boolean;
+  };
   pdp: {
+    bundles: {
+      isEnabled: boolean;
+    };
+    buyNow: {
+      isEnabled: boolean;
+    };
+    complementaryProducts: {
+      isEnabled: boolean;
+    };
     quantityPicker: {
       isEnabled: boolean;
     };
@@ -33,6 +48,9 @@ const bareHost =
 const defaultUrl = bareHost ? `https://${bareHost}` : "http://localhost:3000";
 
 export const shopConfig = {
+  agent: {
+    isEnabled: false,
+  },
   analytics: {
     speedInsights: {
       isEnabled: false,
@@ -41,7 +59,19 @@ export const shopConfig = {
       isEnabled: false,
     },
   },
+  auth: {
+    isEnabled: process.env.WOO_CUSTOMER_ACCOUNTS_ENABLED === "true",
+  },
   pdp: {
+    bundles: {
+      isEnabled: true,
+    },
+    buyNow: {
+      isEnabled: true,
+    },
+    complementaryProducts: {
+      isEnabled: true,
+    },
     quantityPicker: {
       isEnabled: true,
     },

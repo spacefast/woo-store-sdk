@@ -25,7 +25,7 @@ pnpm test:shop
 pnpm build:shop
 ```
 
-The repository E2E harness additionally exercises catalog, search, cart-token continuity, coupons, hosted checkout, customer auth, addresses, and order placement against a real WooCommerce instance.
+The repository E2E harness additionally exercises catalog, content routes, cart-token continuity, hosted checkout, customer registration, profile updates, addresses, order history, and signed cache revalidation against a real WooCommerce instance.
 
 ## Upstream
 

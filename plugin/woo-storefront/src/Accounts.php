@@ -83,6 +83,16 @@ final class Accounts {
 
 		register_rest_route(
 			Auth::REST_NAMESPACE,
+			'/customer/profile',
+			array(
+				'methods'             => 'PUT',
+				'callback'            => array( $this, 'update_profile' ),
+				'permission_callback' => array( $this, 'authorize' ),
+			)
+		);
+
+		register_rest_route(
+			Auth::REST_NAMESPACE,
 			'/customer/address',
 			array(
 				'methods'             => 'PUT',
@@ -90,6 +100,21 @@ final class Accounts {
 				'permission_callback' => array( $this, 'authorize' ),
 			)
 		);
+	}
+
+	/**
+	 * Update the authenticated customer's name.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response
+	 */
+	public function update_profile( WP_REST_Request $request ): WP_REST_Response {
+		$customer = new \WC_Customer( $this->customer_id( $request ) );
+		$customer->set_first_name( sanitize_text_field( (string) $request->get_param( 'firstName' ) ) );
+		$customer->set_last_name( sanitize_text_field( (string) $request->get_param( 'lastName' ) ) );
+		$customer->save();
+
+		return new WP_REST_Response( Auth::customer_payload( $customer->get_id() ), 200 );
 	}
 
 	/**

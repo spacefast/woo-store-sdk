@@ -68,9 +68,12 @@ describe('Start storefront RPC route', () => {
           headers: { 'X-WP-Total': '1', 'X-WP-TotalPages': '1' },
         })
       }
-      if (url.pathname.endsWith('/cart') && init?.method !== 'POST') {
-        // ensureCartToken bootstrap fetch issued before the first mutation.
-        return Response.json(emptyCartPayload, { headers: { 'Cart-Token': 'bootstrap-token' } })
+      if (url.pathname.endsWith('/session')) {
+        expect(init?.method).toBe('POST')
+        return Response.json(
+          { cartToken: 'bootstrap-token' },
+          { status: 201, headers: { 'Cart-Token': 'bootstrap-token' } },
+        )
       }
       expect(url.pathname).toMatch(/\/cart\/add-item$/u)
       expect(init?.method).toBe('POST')
@@ -264,7 +267,7 @@ describe('direct server access and caching', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('enforces no-store for every query carrying a customer token', async () => {
+  it('bypasses process and shared fetch caches for every query carrying a customer token', async () => {
     await new StartCookieSessionStore(sessionSecret).write({
       cacheId: 'customer-1',
       cartToken: 'cart-token',
@@ -286,8 +289,11 @@ describe('direct server access and caching', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(cache.size).toBe(0)
-    const [, requestInit] = fetchMock.mock.calls[0]!
-    expect(requestInit?.cache).toBe('no-store')
+    const [firstUrl, requestInit] = fetchMock.mock.calls[0]!
+    const [secondUrl] = fetchMock.mock.calls[1]!
+    expect(new URL(String(firstUrl)).searchParams.get('_woo_request')).toBeTruthy()
+    expect(String(firstUrl)).not.toBe(String(secondUrl))
+    expect(requestInit?.cache).toBeUndefined()
     expect(new Headers(requestInit?.headers).get('Authorization')).toBe('Bearer customer-token')
   })
 

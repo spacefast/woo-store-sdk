@@ -31,10 +31,15 @@ const ALLOWED_OPERATIONS = new Set([
   'customer.get',
   'customer.orders',
   'customer.order',
+  'customer.updateProfile',
   'customer.updateAddress',
 ])
 
 type RpcHandler = (request: Request) => Promise<Response>
+
+const RPC_RESPONSE_INIT = {
+  headers: { 'Cache-Control': 'private, no-store' },
+} as const
 
 class RpcProtocolError extends Error {
   readonly code = 'invalid_rpc_request'
@@ -172,17 +177,20 @@ function errorStatus(error: unknown): number {
 
 export function createRpcHandlers(
   createClient: (session: SessionStore) => StorefrontClient,
-  createSession: () => SessionStore,
+  createSession: (request?: Request) => SessionStore,
 ): { GET: RpcHandler; POST: RpcHandler } {
   const handle = (method: 'GET' | 'POST'): RpcHandler => async (request) => {
     try {
       const rpcRequest = await readRpcRequest(request, method)
-      const session = createSession()
+      const session = createSession(request)
       const client = createClient(session)
       const data = await dispatch(client, rpcRequest, session, method)
-      return Response.json({ data: data ?? null })
+      return Response.json({ data: data ?? null }, RPC_RESPONSE_INIT)
     } catch (error) {
-      return Response.json(errorBody(error), { status: errorStatus(error) })
+      return Response.json(errorBody(error), {
+        ...RPC_RESPONSE_INIT,
+        status: errorStatus(error),
+      })
     }
   }
 

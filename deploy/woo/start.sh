@@ -42,6 +42,7 @@ cp -a /usr/src/wordpress/wp-content/plugins/woo-storefront/. wp-content/plugins/
 wp option update home "$WORDPRESS_URL" --allow-root
 wp option update siteurl "$WORDPRESS_URL" --allow-root
 wp option update permalink_structure '/%postname%/' --allow-root
+wp option update users_can_register 1 --allow-root
 wp rewrite flush --hard --allow-root
 wp plugin activate woocommerce woo-storefront --allow-root
 wp option update woocommerce_currency USD --allow-root
@@ -68,6 +69,42 @@ foreach ($products as [$sku, $name, $description, $price]) {
   $product->set_catalog_visibility("visible");
   $product->set_manage_stock(false);
   $product->save();
+}
+'
+
+wp eval --allow-root '
+$pages = [
+  ["about", "About Woo Store SDK", "<p>This public demo runs on WooCommerce and Woo Store SDK.</p>"],
+  ["privacy-policy", "Privacy policy", "<p>This demo does not submit or store checkout form data or card details.</p>"],
+  ["refund-policy", "Refund policy", "<p>No purchases are made, so there are no charges or refunds.</p>"],
+  ["shipping-policy", "Shipping policy", "<p>Nothing in this demo is fulfilled or shipped.</p>"],
+  ["terms", "Terms", "<p>This is a software demonstration. Completing checkout creates no order.</p>"],
+];
+foreach ($pages as [$slug, $title, $content]) {
+  if (get_page_by_path($slug, OBJECT, "page")) {
+    continue;
+  }
+  wp_insert_post([
+    "post_name" => $slug,
+    "post_title" => $title,
+    "post_content" => $content,
+    "post_excerpt" => wp_strip_all_tags($content),
+    "post_status" => "publish",
+    "post_type" => "page",
+  ]);
+}
+$category = get_category_by_slug("journal");
+$category_id = $category ? $category->term_id : wp_create_category("Journal");
+if (!get_page_by_path("building-a-woo-storefront", OBJECT, "post")) {
+  wp_insert_post([
+    "post_name" => "building-a-woo-storefront",
+    "post_title" => "Building a Woo storefront",
+    "post_content" => "<p>A real WooCommerce catalog, typed SDK contracts, and a deliberately fake checkout make this demo safe to explore.</p>",
+    "post_excerpt" => "How the Woo Store SDK demo fits together.",
+    "post_status" => "publish",
+    "post_type" => "post",
+    "post_category" => [$category_id],
+  ]);
 }
 '
 

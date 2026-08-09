@@ -13,7 +13,9 @@ Woo Store SDK is a typed, framework-friendly storefront client for WooCommerce. 
 
 ## Shop example
 
-[`examples/shop`](./examples/shop) is a Woo-native fork of Vercel Shop. It covers products, search, categories, carts, coupons, and a deliberately fake public checkout. The checkout never sends card data or creates an order; it only accepts Stripe's published example card numbers and makes the no-charge/no-shipping boundary explicit.
+[`examples/shop`](./examples/shop) is a Woo-native fork of Vercel Shop. It preserves the default demo's catalog, search, collections, product recommendations, bundle surface, buy-now flow, cart, content pages, policies, journal, sitemaps, Markdown routes, and `llms.txt`, then adds optional Woo customer accounts. Shopify-specific accelerated checkout is replaced by Woo hosted checkout in the SDK and a deliberately fake public checkout in the demo.
+
+The fake checkout never sends card data or creates an order. It accepts only Stripe's published example card numbers and makes the no-charge/no-shipping boundary explicit.
 
 ```bash
 pnpm install
@@ -26,9 +28,11 @@ See the example README for environment variables and verification commands.
 
 ## Deployment
 
-The repository includes separate production images for the public storefront and its WooCommerce origin:
+The public reference deployment uses an existing managed WordPress/WooCommerce site on Pressable as its commerce origin and deploys only the Next.js storefront to Spacefast. Set `WOO_STORE_URL` to that WordPress origin and keep `WOO_SESSION_SECRET` and `WOO_REVALIDATE_SECRET` in the Spacefast runtime environment.
+
+The repository also includes separate production images for local or self-hosted verification:
 
 - `deploy/shop/Dockerfile` builds the SDK packages and Next.js shop.
 - `deploy/woo/Dockerfile` builds WordPress, WooCommerce, the feature plugin, and idempotent demo catalog seeding.
 
-Deploy the Woo image with a persistent `/var/www/html` volume and MySQL, then set the shop's `WOO_STORE_URL` to that public origin. Runtime secrets remain environment variables. No Stripe secret or payment processor is used by the demo.
+The Woo image needs a persistent `/var/www/html` volume and MySQL. It is not required for the Pressable-backed public demo. No Stripe secret or payment processor is used by the demo.

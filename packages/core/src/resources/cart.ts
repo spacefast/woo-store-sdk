@@ -1,5 +1,5 @@
 import type { Cart, CartItem, SessionStore, StorefrontClient, Transport } from '../contracts'
-import { queryKey, STORE_API } from './shared'
+import { PLUGIN_API, queryKey, STORE_API } from './shared'
 
 const CART_INVALIDATION = [{ type: 'resource', resource: 'cart' }] as const
 
@@ -81,15 +81,16 @@ export function createCartResource(transport: Transport, session: SessionStore):
     return response.data
   }
 
-  /**
-   * Store API cart mutations require a nonce OR a Cart-Token, and a fresh
-   * headless session has neither — the token only arrives on a cart
-   * response header. Bootstrap by fetching the cart once before the first
-   * mutation so the rotated Cart-Token lands in the session.
-   */
+  /** Store API mutations require an isolated Cart-Token for this visitor. */
   const ensureCartToken = async (): Promise<void> => {
     const { cartToken } = await session.read()
-    if (!cartToken) await freshCart()
+    if (!cartToken) {
+      await transport.request<unknown>({
+        method: 'POST',
+        path: `${PLUGIN_API}/session`,
+        profile: 'session',
+      }, session)
+    }
   }
 
   return {

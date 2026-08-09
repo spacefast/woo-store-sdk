@@ -98,7 +98,8 @@ function wrapMutation<TData, TVariables>(
 
 export function createStorefront(config: StorefrontConfig): NextStorefront {
   const secret = sessionSecret(config)
-  const createSession = (): SessionStore => new CookieSessionStore(secret)
+  const createSession = (request?: Request): SessionStore =>
+    new CookieSessionStore(secret, undefined, undefined, request?.headers.get('cookie') ?? undefined)
   const createClient: ClientFactory = (session) => createStorefrontClient(config, session)
 
   // Only metadata and optimistic reducers are copied from this client. Its
@@ -143,6 +144,12 @@ export function createStorefront(config: StorefrontConfig): NextStorefront {
     get: wrapQueryFactory(config.url, createSession, createClient, (client) => client.customer.get),
     orders: wrapQueryFactory(config.url, createSession, createClient, (client) => client.customer.orders),
     order: wrapQueryFactory(config.url, createSession, createClient, (client) => client.customer.order),
+    updateProfile: wrapMutation(
+      template.customer.updateProfile,
+      createSession,
+      (client) => client.customer.updateProfile,
+      createClient,
+    ),
     updateAddress: wrapMutation(
       template.customer.updateAddress,
       createSession,

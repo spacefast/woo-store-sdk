@@ -370,7 +370,14 @@ export class FetchTransport implements Transport {
       if (value !== undefined) url.searchParams.set(key, String(value))
     }
 
-    const headers = new Headers({ Accept: 'application/json' })
+    // A unique URL bypasses framework fetch caches without sending request
+    // Cache-Control headers. Some managed WordPress hosts treat those headers
+    // as a request for a fresh anonymous Woo session and discard Cart-Token.
+    if (req.profile === 'session' || sessionData.customerToken) {
+      url.searchParams.set('_woo_request', globalThis.crypto.randomUUID())
+    }
+
+    const headers = new Headers()
     if (sessionData.cartToken) headers.set('Cart-Token', sessionData.cartToken)
     if (sessionData.customerToken) headers.set('Authorization', `Bearer ${sessionData.customerToken}`)
     if (req.body !== undefined) headers.set('Content-Type', 'application/json')
@@ -379,8 +386,6 @@ export class FetchTransport implements Transport {
       method: req.method,
       headers,
       ...(req.body === undefined ? {} : { body: JSON.stringify(req.body) }),
-      // A customer JWT makes any request personalized, regardless of resource.
-      ...(sessionData.customerToken ? { cache: 'no-store' as const } : {}),
     })
 
     const rotatedCartToken = response.headers.get('Cart-Token') ?? undefined

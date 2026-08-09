@@ -161,6 +161,7 @@ function clientFor(session: SessionStore): StorefrontClient {
       get: () => query('customer', 'get', async () => ({}) as never, 'session'),
       orders: () => query('orders', 'list', async () => ({ items: [], total: 0 }), 'session'),
       order: () => query('orders', 'byId', async () => ({}) as never, 'session'),
+      updateProfile: mutation({}, [{ type: 'resource', resource: 'customer' }]) as never,
       updateAddress: mutation({}, [{ type: 'resource', resource: 'customer' }]) as never,
     },
   }
@@ -182,6 +183,7 @@ describe('RPC handlers', () => {
     )
 
     expect(getResponse.status).toBe(200)
+    expect(getResponse.headers.get('cache-control')).toBe('private, no-store')
     expect(await getResponse.json()).toEqual({ data: { items: [], total: 0, totalPages: 0 } })
 
     const postResponse = await storefront.handlers.POST(
@@ -193,6 +195,7 @@ describe('RPC handlers', () => {
     )
 
     expect(postResponse.status).toBe(200)
+    expect(postResponse.headers.get('cache-control')).toBe('private, no-store')
     expect(await postResponse.json()).toEqual({ data: {} })
   })
 
@@ -210,6 +213,33 @@ describe('RPC handlers', () => {
     const body = await response.json()
     expect(body).toEqual({ data: null })
     expect(Object.prototype.hasOwnProperty.call(body, 'data')).toBe(true)
+  })
+
+  it('reads the signed session from the Route Handler request', async () => {
+    const sealed = await sessionCodec.seal(
+      { cacheId: 'visitor-from-request', cartToken: 'request-cart-token' },
+      'test-secret',
+    )
+    state.clientFactory = (_config, rawSession) => {
+      const requestSession = rawSession as SessionStore
+      const client = clientFor(requestSession)
+      client.cart.get = () =>
+        query('cart', 'get', async () => {
+          const session = await requestSession.read()
+          return { items: [], itemsCount: session.cartToken === 'request-cart-token' ? 2 : 0 } as never
+        }, 'session')
+      return client
+    }
+
+    const storefront = createStorefront({ url: 'https://woo.test', sessionSecret: 'test-secret' })
+    const response = await storefront.handlers.GET(
+      new Request('https://app.test/api/store/query?op=cart.get', {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${sealed}` },
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ data: { items: [], itemsCount: 2 } })
   })
 })
 

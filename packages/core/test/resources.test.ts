@@ -98,6 +98,9 @@ describe('mutation metadata and optimistic cart updates', () => {
     expect(client.cart.removeCoupon.invalidates).toEqual([{ type: 'resource', resource: 'cart' }])
     expect(client.auth.login.invalidates).toEqual([{ type: 'resource', resource: 'session-all' }])
     expect(client.auth.logout.invalidates).toEqual([{ type: 'resource', resource: 'session-all' }])
+    expect(client.customer.updateProfile.invalidates).toEqual([
+      { type: 'resource', resource: 'customer' },
+    ])
     expect(client.customer.updateAddress.invalidates).toEqual([
       { type: 'resource', resource: 'customer' },
     ])

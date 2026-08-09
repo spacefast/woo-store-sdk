@@ -54,6 +54,20 @@ export function createCustomerResource(
       }
     },
 
+    updateProfile: {
+      mutationKey: queryKey('customer', 'updateProfile'),
+      invalidates: [{ type: 'resource', resource: 'customer' }],
+      mutationFn: async (variables) => {
+        const response = await transport.request<Customer>({
+          method: 'PUT',
+          path: `${PLUGIN_API}/customer/profile`,
+          body: { firstName: variables.firstName, lastName: variables.lastName },
+          profile: 'session',
+        }, session)
+        return response.data
+      },
+    },
+
     updateAddress: {
       mutationKey: queryKey('customer', 'updateAddress'),
       invalidates: [{ type: 'resource', resource: 'customer' }],

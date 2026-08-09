@@ -223,6 +223,13 @@ function bindClient(
       get: () => query((client) => client.customer.get()),
       orders: (params) => query((client) => client.customer.orders(params)),
       order: (id) => query((client) => client.customer.order(id)),
+      updateProfile: withInvalidation(
+        template.customer.updateProfile,
+        createSession,
+        createClient,
+        (client) => client.customer.updateProfile,
+        cache,
+      ),
       updateAddress: withInvalidation(
         template.customer.updateAddress,
         createSession,
@@ -253,6 +260,7 @@ const MUTATION_OPERATIONS = new Set<string>([
   'auth.login',
   'auth.logout',
   'auth.register',
+  'customer.updateProfile',
   'customer.updateAddress',
 ])
 
@@ -303,6 +311,8 @@ async function executeRpc(client: Omit<StartStorefront, 'serverRoute' | 'revalid
       return client.customer.orders(args as never).queryFn()
     case 'customer.order':
       return client.customer.order(args as never).queryFn()
+    case 'customer.updateProfile':
+      return client.customer.updateProfile.mutationFn(args as never)
     case 'customer.updateAddress':
       return client.customer.updateAddress.mutationFn(args as never)
     default:

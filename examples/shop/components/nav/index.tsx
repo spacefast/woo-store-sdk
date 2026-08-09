@@ -6,6 +6,7 @@ import { shopConfig } from "@/lib/config";
 import type { MenuItem } from "@/lib/menu";
 
 import { CartIcon, CartIconFallback } from "./cart";
+import { NavAccount, NavAccountFallback } from "./account";
 import { MobileMenu } from "./mobile-menu";
 import { QuickLinks } from "./quick-links";
 import { SearchModal } from "./search-modal";
@@ -31,6 +32,11 @@ export async function Nav({ locale }: { locale: string }) {
 
         <div className="flex items-center gap-5 ml-auto">
           <SearchModal />
+          {shopConfig.auth.isEnabled ? (
+            <Suspense fallback={<NavAccountFallback />}>
+              <NavAccount />
+            </Suspense>
+          ) : null}
           <Suspense fallback={<CartIconFallback />}>
             <CartIcon />
           </Suspense>

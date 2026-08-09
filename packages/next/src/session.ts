@@ -126,6 +126,22 @@ function createCacheId(): string {
   return bytesToBase64Url(globalThis.crypto.getRandomValues(new Uint8Array(18)))
 }
 
+function requestCookieValue(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined
+  for (const pair of header.split(';')) {
+    const separator = pair.indexOf('=')
+    if (separator === -1 || pair.slice(0, separator).trim() !== name) continue
+    const value = pair.slice(separator + 1).trim()
+    if (!value) return undefined
+    try {
+      return decodeURIComponent(value)
+    } catch {
+      return value
+    }
+  }
+  return undefined
+}
+
 function isReadOnlyCookieError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   return (
@@ -145,6 +161,7 @@ export class CookieSessionStore implements SessionStore {
     private readonly secret: string,
     private readonly codec: SessionCodec = sessionCodec,
     private readonly cookieStoreProvider: CookieStoreProvider = cookies as CookieStoreProvider,
+    private readonly requestCookieHeader?: string,
   ) {
     if (!secret) throw new Error('A non-empty session secret is required')
   }
@@ -190,7 +207,9 @@ export class CookieSessionStore implements SessionStore {
 
   private async readFromCookie(): Promise<SessionData> {
     const cookieStore = await this.cookieStoreProvider()
-    const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value
+    const cookieValue =
+      requestCookieValue(this.requestCookieHeader, SESSION_COOKIE_NAME) ??
+      cookieStore.get(SESSION_COOKIE_NAME)?.value
 
     if (cookieValue) {
       const session = await this.codec.unseal(cookieValue, this.secret)

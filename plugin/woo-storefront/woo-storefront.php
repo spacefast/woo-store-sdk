@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Storefront
  * Description: Hosted checkout, customer accounts, and cache signals for headless WooCommerce storefronts.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Requires at least: 6.4
  * Requires PHP: 8.1
  * WC requires at least: 8.3
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WOO_STOREFRONT_VERSION', '0.1.0' );
+define( 'WOO_STOREFRONT_VERSION', '0.1.1' );
 define( 'WOO_STOREFRONT_FILE', __FILE__ );
 define( 'WOO_STOREFRONT_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -28,6 +28,7 @@ $woo_storefront_files = array(
 	'src/Support/Secrets.php',
 	'src/CheckoutUrl.php',
 	'src/CheckoutEntry.php',
+	'src/Sessions.php',
 	'src/Auth.php',
 	'src/Accounts.php',
 	'src/Webhooks.php',

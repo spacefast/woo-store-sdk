@@ -58,7 +58,34 @@ describe('createStorefrontClient', () => {
 
     await expect(client.cart.checkoutUrl()).resolves.toBe('https://shop.example/checkout/c/signed-token')
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://shop.example/wp-json/wc/store/v1/cart')
+    const requestedUrl = new URL(String(fetchMock.mock.calls[0]?.[0]))
+    expect(requestedUrl.origin + requestedUrl.pathname).toBe(
+      'https://shop.example/wp-json/wc/store/v1/cart',
+    )
+    expect(requestedUrl.searchParams.get('_woo_request')).toBeTruthy()
+  })
+
+  it('creates an isolated guest session before the first cart mutation', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(
+        { cartToken: 'visitor-cart-token' },
+        { status: 201, headers: { 'Cart-Token': 'visitor-cart-token' } },
+      ))
+      .mockResolvedValueOnce(jsonResponse({ ...rawCart, items_count: 1 }))
+    const session = new InMemorySessionStore({ cacheId: 'visitor' })
+    const client = createStorefrontClient({ url: 'https://shop.example', fetch: fetchMock }, session)
+
+    await client.cart.addItem.mutationFn({ id: 42 })
+
+    const sessionUrl = new URL(String(fetchMock.mock.calls[0]?.[0]))
+    expect(sessionUrl.origin + sessionUrl.pathname).toBe(
+      'https://shop.example/wp-json/woo-storefront/v1/session',
+    )
+    expect(sessionUrl.searchParams.get('_woo_request')).toBeTruthy()
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('Cart-Token')).toBe(
+      'visitor-cart-token',
+    )
   })
 
   it('mentions the feature plugin when hosted checkout is unavailable', async () => {

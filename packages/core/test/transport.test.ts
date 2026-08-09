@@ -21,7 +21,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 }
 
 describe('FetchTransport', () => {
-  it('attaches session credentials, disables caching, and persists Cart-Token rotation', async () => {
+  it('attaches session credentials, bypasses shared fetch caches, and persists Cart-Token rotation', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(
       {
         items: [],
@@ -55,12 +55,31 @@ describe('FetchTransport', () => {
     }, session)
 
     const [url, init] = fetchMock.mock.calls[0] ?? []
-    expect(String(url)).toBe('https://shop.example/wp-json/wc/store/v1/cart?calculate_totals=true')
+    const requestUrl = new URL(String(url))
+    expect(requestUrl.origin + requestUrl.pathname).toBe('https://shop.example/wp-json/wc/store/v1/cart')
+    expect(requestUrl.searchParams.get('calculate_totals')).toBe('true')
+    expect(requestUrl.searchParams.get('_woo_request')).toBeTruthy()
     expect(new Headers(init?.headers).get('Cart-Token')).toBe('original-cart-token')
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer customer-jwt')
-    expect(init?.cache).toBe('no-store')
+    expect(new Headers(init?.headers).get('Accept')).toBeNull()
+    expect(init?.cache).toBeUndefined()
     expect(result.cartToken).toBe('rotated-cart-token')
     expect((await session.read()).cartToken).toBe('rotated-cart-token')
+  })
+
+  it('uses a unique URL for guest session resources', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ cartToken: 'guest' }))
+    const transport = new FetchTransport({ url: 'https://shop.example', fetch: fetchMock })
+
+    await transport.request({
+      method: 'POST',
+      path: '/wp-json/woo-storefront/v1/session',
+      profile: 'session',
+    }, new InMemorySessionStore({ cacheId: 'visitor-guest' }))
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(new URL(String(url)).searchParams.get('_woo_request')).toBeTruthy()
+    expect(init?.cache).toBeUndefined()
   })
 
   it('reads pagination headers and maps product payloads to camelCase while retaining raw data', async () => {

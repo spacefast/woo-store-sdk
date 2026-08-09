@@ -4,7 +4,7 @@ Tags: woocommerce, headless, checkout, storefront
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,6 +17,7 @@ Woo Storefront fills the server-side gaps needed by the Woo Headless SDK while k
 Features:
 
 * Fresh, short-lived hosted checkout URLs on Store API cart responses.
+* Isolated guest Cart-Token issuance for server-rendered storefronts.
 * Cart-Token session handoff into a theme-independent Checkout Block shell.
 * Signed post-purchase return URLs.
 * Customer access and refresh JWTs with logout revocation.
@@ -41,14 +42,20 @@ The `woo-storefront/v1` namespace provides:
 * `POST /auth/refresh`
 * `POST /auth/logout`
 * `POST /auth/register`
+* `POST /session`
 * `GET /customer`
 * `GET /customer/orders`
 * `GET /customer/orders/{id}`
+* `PUT /customer/profile`
 * `PUT /customer/address`
 
 Account routes require `Authorization: Bearer <customer-access-token>`.
 
 == Changelog ==
+
+= 0.1.1 =
+* Issue a distinct guest Cart-Token before the first headless cart mutation.
+* Add authenticated customer profile updates.
 
 = 0.1.0 =
 * Initial feature-plugin implementation.
