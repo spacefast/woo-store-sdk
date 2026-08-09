@@ -1,6 +1,6 @@
 # Woo Store SDK shop
 
-A production-shaped Next.js 16 storefront powered by WooCommerce and Woo Store SDK. The interface is a surgical fork of Vercel's Shop example; its commerce provider, sessions, cart mutations, search, collections, products, and hosted checkout are implemented with Woo Store SDK.
+A production-shaped Next.js 16 storefront powered by WooCommerce and Woo Store SDK. The interface is a surgical fork of Vercel's Shop example; its commerce provider, sessions, cart mutations, search, collections, and products are implemented with Woo Store SDK.
 
 ## Run it
 
@@ -15,7 +15,7 @@ pnpm dev:shop
 
 Set `WOO_STORE_URL` to a WordPress site with WooCommerce and the bundled `woo-storefront` plugin active. `WOO_SESSION_SECRET` must contain at least 32 random characters.
 
-The app exposes the SDK's signed server bridge at `/api/store/*`. Browser cart changes use that bridge; catalog reads and the initial cart render stay on the server. Checkout hands the visitor to the WooCommerce checkout URL created by the feature plugin.
+The app exposes the SDK's signed server bridge at `/api/store/*`. Browser cart changes use that bridge; catalog reads and the initial cart render stay on the server. The public example routes checkout to an explicit, browser-only simulation using Stripe's published example cards. It sends no payment data, charges nothing, and creates no order. The underlying SDK and feature plugin still expose hosted WooCommerce checkout for applications that need it.
 
 ## Verify
 

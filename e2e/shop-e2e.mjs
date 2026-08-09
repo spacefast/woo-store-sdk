@@ -80,6 +80,16 @@ await check('browser RPC adds an item and persists its signed session', async ()
   assert(rereadPayload.data?.itemsCount === 2, 'cart session did not survive a second request')
 })
 
+await check('demo checkout is explicit and exposes only Stripe example cards', async () => {
+  const response = await request('/checkout')
+  const html = await response.text()
+  assert(response.status === 200, 'demo checkout returned ' + response.status)
+  assert(html.includes('No request is sent to Stripe'), 'missing no-charge checkout disclaimer')
+  assert(html.includes('4242 4242 4242 4242'), 'Visa example card missing')
+  assert(html.includes('5555 5555 5555 4444'), 'Mastercard example card missing')
+  assert(!html.includes('sk_live_'), 'live Stripe key leaked into checkout')
+})
+
 await check('hosted checkout URL crosses back into WooCommerce', async () => {
   const response = await request('/api/store/query?op=cart.checkoutUrl')
   const payload = await response.json()

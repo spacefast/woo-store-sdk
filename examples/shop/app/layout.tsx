@@ -9,6 +9,7 @@ import { AnalyticsComponents } from "@/components/analytics";
 import { CartProviderWrapper } from "@/components/cart/context";
 import { CartNotifications } from "@/components/cart/notifications";
 import { CartOverlayBridge } from "@/components/cart/overlay-bridge";
+import { DemoBanner } from "@/components/demo-banner";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
 import { SiteSchema } from "@/components/schema/site-schema";
@@ -50,6 +51,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         >
           {t("skipToContent")}
         </a>
+        <DemoBanner />
         <SiteSchema locale={locale} />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <CartProviderWrapper cartData={cartData}>

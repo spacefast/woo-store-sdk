@@ -3,7 +3,6 @@
 import { Loader2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -12,23 +11,8 @@ import { OverlayItem } from "./overlay-item";
 import { OverlaySummary } from "./overlay-summary";
 import { CartWarnings } from "./warnings";
 
-function CheckoutButtonContent({
-  isCheckingOut,
-  isUpdatingCart,
-}: {
-  isCheckingOut: boolean;
-  isUpdatingCart: boolean;
-}) {
+function CheckoutButtonContent({ isUpdatingCart }: { isUpdatingCart: boolean }) {
   const t = useTranslations("cart");
-  if (isCheckingOut) {
-    return (
-      <span className="flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        <span>{t("redirecting")}</span>
-      </span>
-    );
-  }
-
   if (isUpdatingCart) {
     return (
       <span className="flex items-center gap-2">
@@ -45,24 +29,13 @@ export function OverlayContent() {
   const router = useRouter();
   const locale = useLocale();
   const { cartWithPending, isUpdatingCart, setOverlayOpen } = useCart();
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const t = useTranslations("cart");
-
-  // Reset pending state when returning from checkout (bfcache / back navigation)
-  useEffect(() => {
-    const handlePageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) setIsCheckingOut(false);
-    };
-    window.addEventListener("pageshow", handlePageShow);
-    return () => window.removeEventListener("pageshow", handlePageShow);
-  }, []);
 
   const displayCart = cartWithPending;
 
   const handleCheckout = () => {
-    if (!displayCart?.checkoutUrl) return;
-    setIsCheckingOut(true);
-    window.location.href = displayCart.checkoutUrl;
+    setOverlayOpen(false);
+    router.push("/checkout");
   };
 
   if (!displayCart || displayCart.lines.length === 0) {
@@ -101,10 +74,10 @@ export function OverlayContent() {
         <Button
           onClick={handleCheckout}
           className="w-full h-12 justify-center"
-          disabled={isCheckingOut || isUpdatingCart}
+          disabled={isUpdatingCart}
           aria-label={t("proceedToCheckout")}
         >
-          <CheckoutButtonContent isCheckingOut={isCheckingOut} isUpdatingCart={isUpdatingCart} />
+          <CheckoutButtonContent isUpdatingCart={isUpdatingCart} />
         </Button>
       </footer>
     </div>
