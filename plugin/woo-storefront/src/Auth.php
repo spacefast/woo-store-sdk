@@ -349,7 +349,7 @@ final class Auth {
 	 * @return string
 	 */
 	private function bearer_token( WP_REST_Request $request ): string {
-		$authorization = $request->get_header( 'Authorization' );
+		$authorization = (string) $request->get_header( 'Authorization' );
 		return preg_match( '/^Bearer\s+(\S+)$/i', $authorization, $matches ) ? $matches[1] : '';
 	}
 

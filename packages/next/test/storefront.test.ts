@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { RateLimitedError } from '@woo/storefront-core'
 import type {
   CacheProfile,
   InvalidationTarget,
@@ -64,6 +65,15 @@ vi.mock('@woo/storefront-core', () => {
     }
   }
 
+  class RateLimitedError extends StoreApiError {
+    constructor(
+      message: string,
+      readonly retryAfterSeconds?: number,
+    ) {
+      super(message, 429, 'rate_limited')
+    }
+  }
+
   return {
     CACHE_PROFILES: {
       catalog: {
@@ -94,6 +104,7 @@ vi.mock('@woo/storefront-core', () => {
     },
     StoreApiError,
     CartConflictError,
+    RateLimitedError,
     createStorefrontClient(config: unknown, session: unknown) {
       return state.clientFactory(config, session)
     },
@@ -197,6 +208,37 @@ describe('RPC handlers', () => {
     expect(postResponse.status).toBe(200)
     expect(postResponse.headers.get('cache-control')).toBe('private, no-store')
     expect(await postResponse.json()).toEqual({ data: {} })
+
+    state.clientFactory = (_config, session) => {
+      const client = clientFor(session as SessionStore)
+      client.auth.logout = {
+        mutationKey: ['woo', 'auth', 'logout'],
+        invalidates: [],
+        mutationFn: async () => {
+          throw new RateLimitedError('Slow down.', 17)
+        },
+      }
+      return client
+    }
+    const limitedStorefront = createStorefront({ url: 'https://woo.test', sessionSecret: 'test-secret' })
+    const limitedResponse = await limitedStorefront.handlers.POST(
+      new Request('https://app.test/api/store/rpc', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ op: 'auth.logout' }),
+      }),
+    )
+
+    expect(limitedResponse.status).toBe(429)
+    expect(limitedResponse.headers.get('retry-after')).toBe('17')
+    expect(await limitedResponse.json()).toEqual({
+      error: {
+        code: 'rate_limited',
+        status: 429,
+        message: 'Slow down.',
+        retryAfterSeconds: 17,
+      },
+    })
   })
 
   it('serializes void mutation results as data: null so the RPC envelope survives', async () => {

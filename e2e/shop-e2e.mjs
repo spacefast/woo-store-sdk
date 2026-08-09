@@ -10,6 +10,7 @@ const base = process.argv[2] ?? 'http://127.0.0.1:3000'
 const revalidateSecret = process.argv[3] ?? 'e2e-webhook-secret'
 let cookie = ''
 let passed = 0
+let registeredEmail = ''
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -39,6 +40,27 @@ async function check(name, run) {
   console.log(`  ok  ${name}`)
 }
 
+async function rpc(op, args, { retryOnRateLimit = false } = {}) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await request('/api/store/rpc', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ op, ...(args === undefined ? {} : { args }) }),
+    })
+    const payload = await response.json()
+    if (response.status !== 429 || !retryOnRateLimit || attempt > 0) {
+      return { payload, response }
+    }
+
+    const retryAfterSeconds = Number(
+      response.headers.get('retry-after') ?? payload.error?.retryAfterSeconds,
+    )
+    assert(Number.isFinite(retryAfterSeconds), `${op} was rate limited without Retry-After`)
+    await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1_000))
+  }
+  throw new Error(`${op} exhausted its bounded rate-limit retry`)
+}
+
 async function waitForCartCount(expected, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs
   let actual
@@ -66,11 +88,68 @@ await check('catalog RPC returns a product', async () => {
   assert(relatedProduct?.name, 'catalog RPC returned no recommendation candidate')
 })
 
+await check('Woo customer registration, logout, and login rotate the authenticated session', async () => {
+  registeredEmail = `shop-e2e-${Date.now()}@example.com`
+  const register = await rpc('auth.register', {
+    email: registeredEmail,
+    password: 'correct-horse-demo-42',
+    firstName: 'Demo',
+    lastName: 'Shopper',
+  })
+  assert(register.response.status === 200, `auth.register returned ${register.response.status}`)
+
+  const logout = await rpc('auth.logout', undefined, { retryOnRateLimit: true })
+  assert(logout.response.status === 200, `auth.logout returned ${logout.response.status}`)
+
+  const signedOut = await request('/api/store/query?op=customer.get')
+  const signedOutPayload = await signedOut.json()
+  assert(
+    signedOut.status === 401,
+    `signed-out customer.get returned ${signedOut.status}: ${JSON.stringify(signedOutPayload)}`,
+  )
+
+  const login = await rpc(
+    'auth.login',
+    {
+      email: registeredEmail,
+      password: 'correct-horse-demo-42',
+    },
+    { retryOnRateLimit: true },
+  )
+  assert(login.response.status === 200, `auth.login returned ${login.response.status}`)
+  assert(login.payload.data?.email === registeredEmail, 'login returned the wrong customer')
+})
+
 await check('partially prerendered homepage streams live Woo products', async () => {
   const response = await request('/')
   const html = await response.text()
   assert(response.status === 200, `homepage returned ${response.status}`)
   assert(html.includes(product.name), `homepage did not contain ${product.name}`)
+})
+
+await check('search and collection routes are backed by Woo catalog queries', async () => {
+  const searchTerm = product.name.split(' ')[0]
+  const search = await request(`/search?q=${encodeURIComponent(searchTerm)}`)
+  const searchHtml = await search.text()
+  assert(search.status === 200, `search returned ${search.status}`)
+  assert(searchHtml.includes(product.name), `search did not contain ${product.name}`)
+
+  const categories = await request('/api/store/query?op=categories.list')
+  const categoriesPayload = await categories.json()
+  const category = product.categories?.[0]
+  assert(categories.status === 200 && categoriesPayload.data?.length > 0, 'Woo categories returned no collection')
+  assert(category?.slug, `${product.name} has no Woo collection`)
+
+  for (const [path, expected] of [
+    ['/collections', category.name],
+    ['/collections/all', product.name],
+    [`/collections/${encodeURIComponent(category.slug)}`, product.name],
+  ]) {
+    const response = await request(path)
+    const html = await response.text()
+    assert(response.status === 200, `${path} returned ${response.status}`)
+    assert(html.includes(expected), `${path} did not contain ${expected}`)
+  }
 })
 
 await check('product detail renders the Woo product', async () => {
@@ -79,6 +158,9 @@ await check('product detail renders the Woo product', async () => {
   assert(response.status === 200, `product page returned ${response.status}`)
   assert(html.includes(product.name), `product page did not contain ${product.name}`)
   assert(html.includes('Buy now'), 'product page is missing accelerated purchase')
+  assert(html.includes('Decrease quantity'), 'product page is missing the quantity picker')
+  assert(html.includes('Increase quantity'), 'product page is missing the quantity picker')
+  assert(html.includes('Complete your order'), 'product page is missing complementary products')
   assert(html.includes(relatedProduct.name), 'product page is missing complementary products')
 })
 
@@ -101,12 +183,7 @@ await check('WordPress content, policy, blog, and agent-readable routes work', a
 })
 
 await check('browser RPC adds an item and persists its signed session', async () => {
-  const response = await request('/api/store/rpc', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ op: 'cart.addItem', args: { id: product.id, quantity: 2 } }),
-  })
-  const payload = await response.json()
+  const { payload, response } = await rpc('cart.addItem', { id: product.id, quantity: 2 })
   assert(response.status === 200, `cart.addItem returned ${response.status}`)
   assert(
     payload.data?.items_count === 2 || payload.data?.itemsCount === 2,
@@ -119,6 +196,27 @@ await check('browser RPC adds an item and persists its signed session', async ()
     rereadCount === 2,
     `cart session did not survive a second request: ${JSON.stringify({ itemsCount: rereadCount })}`,
   )
+})
+
+await check('cart page, quantity updates, and coupon rejection use the same Woo cart', async () => {
+  const before = await request(`/api/store/query?op=cart.get&_=${Date.now()}`)
+  const beforePayload = await before.json()
+  const line = beforePayload.data?.items?.[0]
+  assert(before.status === 200 && line?.key, 'cart reread returned no mutable line')
+
+  const cartPage = await request('/cart')
+  const cartHtml = await cartPage.text()
+  assert(cartPage.status === 200, `cart page returned ${cartPage.status}`)
+  assert(cartHtml.includes(product.name), `cart page did not contain ${product.name}`)
+  assert(cartHtml.includes('Discount code'), 'cart page is missing discount-code entry')
+
+  const updated = await rpc('cart.updateItem', { key: line.key, quantity: 3 })
+  assert(updated.response.status === 200, `cart.updateItem returned ${updated.response.status}`)
+  assert(updated.payload.data?.itemsCount === 3, 'cart quantity did not update to 3')
+
+  const rejected = await rpc('cart.applyCoupon', { code: `NOT-A-COUPON-${Date.now()}` })
+  assert(rejected.response.status >= 400, 'invalid Woo coupon was unexpectedly accepted')
+  assert(rejected.payload.error?.code, 'coupon rejection did not use the typed error envelope')
 })
 
 await check('hosted checkout URL crosses back into WooCommerce', async () => {
@@ -144,29 +242,39 @@ await check('demo checkout is explicit and exposes only Stripe example cards', a
   assert(!html.includes('sk_live_'), 'live Stripe key leaked into checkout')
 })
 
-await check('Woo customer registration opens profile, address, and order surfaces', async () => {
-  const email = `shop-e2e-${Date.now()}@example.com`
-  const register = await request('/api/store/rpc', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      op: 'auth.register',
-      args: { email, password: 'correct-horse-demo-42', firstName: 'Demo', lastName: 'Shopper' },
-    }),
-  })
-  assert(register.status === 200, `auth.register returned ${register.status}`)
+await check('cart removal empties the persisted Woo session', async () => {
+  const current = await request(`/api/store/query?op=cart.get&_=${Date.now()}`)
+  const currentPayload = await current.json()
+  const line = currentPayload.data?.items?.[0]
+  assert(current.status === 200 && line?.key, 'cart had no line to remove')
 
-  const update = await request('/api/store/rpc', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      op: 'customer.updateProfile',
-      args: { firstName: 'Updated', lastName: 'Shopper' },
-    }),
+  const removed = await rpc('cart.removeItem', { key: line.key })
+  assert(removed.response.status === 200, `cart.removeItem returned ${removed.response.status}`)
+  assert(removed.payload.data?.itemsCount === 0, 'cart was not empty after removal')
+  assert(await waitForCartCount(0) === 0, 'empty cart did not persist')
+})
+
+await check('Woo customer profile, address, and order surfaces persist account data', async () => {
+  const update = await rpc('customer.updateProfile', { firstName: 'Updated', lastName: 'Shopper' })
+  assert(update.response.status === 200, `customer.updateProfile returned ${update.response.status}`)
+  assert(update.payload.data?.firstName === 'Updated', 'customer profile name was not updated')
+
+  const address = await rpc('customer.updateAddress', {
+    type: 'shipping',
+    address: {
+      firstName: 'Updated',
+      lastName: 'Shopper',
+      address1: '42 Demo Street',
+      city: 'Amsterdam',
+      state: 'NH',
+      postcode: '1012AB',
+      country: 'NL',
+      email: registeredEmail,
+      phone: '+31201234567',
+    },
   })
-  const updatePayload = await update.json()
-  assert(update.status === 200, `customer.updateProfile returned ${update.status}`)
-  assert(updatePayload.data?.firstName === 'Updated', 'customer profile name was not updated')
+  assert(address.response.status === 200, `customer.updateAddress returned ${address.response.status}`)
+  assert(address.payload.data?.shippingAddress?.city === 'Amsterdam', 'shipping address was not saved')
 
   for (const path of ['/account/profile', '/account/addresses', '/account/orders']) {
     const response = await request(path)

@@ -1,5 +1,6 @@
 import {
   CartConflictError,
+  RateLimitedError,
   StoreApiError,
   type RpcRequest,
   type SessionStore,
@@ -145,7 +146,13 @@ async function dispatch(
 }
 
 function errorBody(error: unknown): {
-  error: { code: string; status: number; message: string; refreshedCart?: unknown }
+  error: {
+    code: string
+    status: number
+    message: string
+    refreshedCart?: unknown
+    retryAfterSeconds?: number
+  }
 } {
   if (error instanceof CartConflictError) {
     return {
@@ -154,6 +161,19 @@ function errorBody(error: unknown): {
         status: error.status,
         message: error.message,
         refreshedCart: error.refreshedCart,
+      },
+    }
+  }
+
+  if (error instanceof RateLimitedError) {
+    return {
+      error: {
+        code: error.code,
+        status: error.status,
+        message: error.message,
+        ...(error.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: error.retryAfterSeconds }),
       },
     }
   }
@@ -187,9 +207,17 @@ export function createRpcHandlers(
       const data = await dispatch(client, rpcRequest, session, method)
       return Response.json({ data: data ?? null }, RPC_RESPONSE_INIT)
     } catch (error) {
+      const retryAfterSeconds = error instanceof RateLimitedError
+        ? error.retryAfterSeconds
+        : undefined
       return Response.json(errorBody(error), {
-        ...RPC_RESPONSE_INIT,
         status: errorStatus(error),
+        headers: {
+          ...RPC_RESPONSE_INIT.headers,
+          ...(retryAfterSeconds === undefined
+            ? {}
+            : { 'Retry-After': String(retryAfterSeconds) }),
+        },
       })
     }
   }

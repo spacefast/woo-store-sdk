@@ -4,7 +4,7 @@ Tags: woocommerce, headless, checkout, storefront
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.1.1
+Stable tag: 0.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -52,6 +52,9 @@ The `woo-storefront/v1` namespace provides:
 Account routes require `Authorization: Bearer <customer-access-token>`.
 
 == Changelog ==
+
+= 0.1.2 =
+* Return a typed authentication error when an account request has no Authorization header.
 
 = 0.1.1 =
 * Issue a distinct guest Cart-Token before the first headless cart mutation.

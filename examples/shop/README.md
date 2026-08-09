@@ -30,3 +30,5 @@ The repository E2E harness additionally exercises catalog, content routes, cart-
 ## Upstream
 
 UI and route structure were forked from [vercel/shop](https://github.com/vercel/shop) at commit `16f672bba377719073d6a2d848b2e2b5edd63cb9`. See [UPSTREAM.md](./UPSTREAM.md) and [LICENSE](./LICENSE).
+
+The provider-by-provider feature map and release proof are documented in [PARITY.md](./PARITY.md).

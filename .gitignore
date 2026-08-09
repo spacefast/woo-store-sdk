@@ -6,3 +6,4 @@ dist/
 coverage/
 .spacefast/
 vendor/
+.pnpm-store/
