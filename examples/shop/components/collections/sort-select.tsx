@@ -1,0 +1,62 @@
+"use client";
+
+import { useTranslations } from "next-intl";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
+
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+
+const SORT_OPTIONS = [
+  { value: "best-matches", key: "bestMatches" },
+  { value: "best-selling", key: "bestSelling" },
+  { value: "product-name-ascending", key: "nameAscending" },
+  { value: "product-name-descending", key: "nameDescending" },
+  { value: "price-low-to-high", key: "priceLowToHigh" },
+  { value: "price-high-to-low", key: "priceHighToLow" },
+  { value: "date-old-to-new", key: "dateOldToNew" },
+  { value: "date-new-to-old", key: "dateNewToOld" },
+] as const;
+
+export function CollectionsSortSelect({ exclude }: { exclude?: string[] } = {}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tSort = useTranslations("search.sort");
+  const tSearch = useTranslations("search");
+  const [isPending, startTransition] = useTransition();
+
+  const options = exclude ? SORT_OPTIONS.filter((o) => !exclude.includes(o.value)) : SORT_OPTIONS;
+  const currentSort = searchParams.get("sort") || "best-matches";
+
+  const handleSortChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (value === "best-matches") {
+      params.delete("sort");
+    } else {
+      params.set("sort", value);
+    }
+
+    startTransition(() => {
+      router.push(`?${params.toString()}`);
+    });
+  };
+
+  return (
+    <Select
+      value={currentSort}
+      onValueChange={(value) => handleSortChange(value ?? "best-matches")}
+      disabled={isPending}
+    >
+      <SelectTrigger className="border-0 shadow-none bg-transparent px-0">
+        <span>{tSearch("sortBy")}</span>
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {tSort(option.key)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}

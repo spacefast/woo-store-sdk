@@ -82,7 +82,7 @@ export const { GET, POST } = woo.handlers
     path: 'app/api/store/revalidate/route.ts',
     contents: `import { woo } from '../../../../lib/woo'
 
-export const { POST } = woo.revalidateHandlers
+export const POST = woo.revalidateHandler()
 `,
   },
 ]
@@ -116,7 +116,7 @@ export const Route = createFileRoute('/api/store/$')({
 import { woo } from '../../../lib/woo'
 
 export const Route = createFileRoute('/api/store/revalidate')({
-  server: woo.revalidateServerRoute,
+  server: { handlers: { POST: woo.revalidateRoute } },
 })
 `,
   },

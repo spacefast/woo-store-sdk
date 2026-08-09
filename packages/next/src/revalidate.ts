@@ -1,6 +1,7 @@
 import { revalidateTag } from 'next/cache'
 
 export const DEFAULT_REVALIDATE_SECRET_HEADER = 'x-woo-webhook-secret'
+export const WOO_STOREFRONT_SIGNATURE_HEADER = 'x-woo-storefront-signature'
 
 export interface RevalidateHandlerOptions {
   secret?: string
@@ -28,6 +29,19 @@ function timingSafeEqual(left: string, right: string): boolean {
   }
 
   return difference === 0
+}
+
+async function hmacSignature(body: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(body))
+  return `sha256=${[...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
 function asPositiveInteger(value: unknown): number | null {
@@ -92,8 +106,13 @@ export function createRevalidateHandler(
       )
     }
 
+    const body = await request.text()
     const suppliedSecret = request.headers.get(headerName)
-    if (!suppliedSecret || !timingSafeEqual(suppliedSecret, secret)) {
+    const suppliedSignature = request.headers.get(WOO_STOREFRONT_SIGNATURE_HEADER)
+    const hasRawSecret = suppliedSecret !== null && timingSafeEqual(suppliedSecret, secret)
+    const hasValidSignature = suppliedSignature !== null
+      && timingSafeEqual(suppliedSignature, await hmacSignature(body, secret))
+    if (!hasRawSecret && !hasValidSignature) {
       return Response.json(
         { error: { code: 'unauthorized', status: 401, message: 'Invalid webhook secret' } },
         { status: 401 },
@@ -102,7 +121,7 @@ export function createRevalidateHandler(
 
     let payload: RevalidationPayload
     try {
-      payload = parsePayload(await request.json())
+      payload = parsePayload(JSON.parse(body) as unknown)
     } catch (error) {
       return Response.json(
         {
@@ -117,7 +136,7 @@ export function createRevalidateHandler(
     }
 
     const tags = tagsForPayload(payload)
-    await Promise.all(tags.map(async (tag) => revalidateTag(tag)))
+    await Promise.all(tags.map(async (tag) => revalidateTag(tag, 'max')))
     return Response.json({ revalidated: true, tags })
   }
 }

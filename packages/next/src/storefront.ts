@@ -36,8 +36,8 @@ type EagerCustomerSurface = {
 export interface NextStorefront extends StorefrontAdapter {
   products: EagerProductSurface
   categories: EagerCategorySurface
-  cart: StorefrontClient['cart'] & { get: EagerQueryFactory<StorefrontClient['cart']['get']> }
-  checkout: StorefrontClient['checkout'] & { get: EagerQueryFactory<StorefrontClient['checkout']['get']> }
+  cart: Omit<StorefrontClient['cart'], 'get'> & { get: EagerQueryFactory<StorefrontClient['cart']['get']> }
+  checkout: Omit<StorefrontClient['checkout'], 'get'> & { get: EagerQueryFactory<StorefrontClient['checkout']['get']> }
   customer: EagerCustomerSurface
   handlers: {
     GET(request: Request): Promise<Response>

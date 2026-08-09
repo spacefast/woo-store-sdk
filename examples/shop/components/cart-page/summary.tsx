@@ -1,0 +1,112 @@
+"use client";
+
+import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { useCart } from "@/components/cart/context";
+import { useCartRender } from "@/components/cart/context";
+import { DiscountForm } from "@/components/cart/discount-form";
+import { cartDiscountAmount } from "@/lib/cart";
+import { prepareCheckoutAction } from "@/lib/cart/action";
+import { cn, formatPrice } from "@/lib/utils";
+
+function CheckoutLink({
+  checkoutUrl,
+  isUpdatingCart,
+  updatingText,
+  checkoutText,
+}: {
+  checkoutUrl: string;
+  isUpdatingCart: boolean;
+  updatingText: string;
+  checkoutText: string;
+}) {
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  // Reset pending state when returning from checkout (bfcache / back navigation)
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setIsCheckingOut(false);
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
+  const baseClassName =
+    "flex items-center justify-center w-full h-12 rounded-lg text-sm font-medium bg-primary text-primary-foreground transition-colors";
+
+  if (isUpdatingCart || isCheckingOut) {
+    return (
+      <span className={cn(baseClassName, "opacity-50 cursor-not-allowed")} aria-disabled="true">
+        <span className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          <span>{isCheckingOut ? checkoutText : updatingText}</span>
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={cn(baseClassName, "hover:bg-primary/90 cursor-pointer")}
+      onClick={async () => {
+        setIsCheckingOut(true);
+        const { checkoutUrl: url } = await prepareCheckoutAction();
+        window.location.href = url || checkoutUrl;
+      }}
+    >
+      <span>{checkoutText}</span>
+    </button>
+  );
+}
+
+interface SummaryProps {
+  completeCheckoutLabel: string;
+  estimatedTotalLabel: string;
+  locale: string;
+  taxesAndShippingNote: string;
+  updatingCartLabel: string;
+}
+
+export function Summary({
+  completeCheckoutLabel,
+  estimatedTotalLabel,
+  locale,
+  taxesAndShippingNote,
+  updatingCartLabel,
+}: SummaryProps) {
+  const { isUpdatingCart } = useCart();
+  const cart = useCartRender();
+
+  if (!cart) return null;
+
+  const lineSubtotal = cart.lines.reduce(
+    (sum, line) => sum + parseFloat(line.cost.totalAmount.amount),
+    0,
+  );
+  const estimatedTotal = Math.max(0, lineSubtotal - cartDiscountAmount(cart));
+  const currencyCode = cart.cost.subtotalAmount.currencyCode;
+
+  return (
+    <div className="space-y-5">
+      <DiscountForm cart={cart} />
+      <div>
+        <div className="flex items-baseline justify-between">
+          <span className="text-base text-muted-foreground">{estimatedTotalLabel}</span>
+          <span className="text-xl font-medium text-foreground">
+            {formatPrice(estimatedTotal, currencyCode, locale)}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">{taxesAndShippingNote}</p>
+      </div>
+
+      <CheckoutLink
+        checkoutUrl={cart.checkoutUrl}
+        isUpdatingCart={isUpdatingCart}
+        updatingText={updatingCartLabel}
+        checkoutText={completeCheckoutLabel}
+      />
+    </div>
+  );
+}

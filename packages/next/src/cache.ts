@@ -105,5 +105,5 @@ export async function invalidateTargets(
     for (const tag of targetTags) tags.add(tag)
   }
 
-  await Promise.all([...tags].map(async (tag) => revalidateTag(tag)))
+  await Promise.all([...tags].map(async (tag) => revalidateTag(tag, 'max')))
 }

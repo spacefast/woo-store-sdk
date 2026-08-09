@@ -4,7 +4,6 @@ import { SessionCodec } from '@woo/storefront-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  DEFAULT_REVALIDATE_SECRET_HEADER,
   SESSION_COOKIE_NAME,
   StartCookieSessionStore,
   TaggedCache,
@@ -233,14 +232,24 @@ describe('direct server access and caching', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(cache.size).toBe(1)
 
+    const body = JSON.stringify({ product_ids: [12], scopes: ['stock'] })
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode('webhook-secret'),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    )
+    const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body)))
+    const signature = `sha256=${[...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`
     const response = await storefront.revalidateRoute({
       request: new Request('https://app.test/api/store/revalidate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          [DEFAULT_REVALIDATE_SECRET_HEADER]: 'webhook-secret',
+          'x-woo-storefront-signature': signature,
         },
-        body: JSON.stringify({ product_ids: [12], scopes: ['stock'] }),
+        body,
       }),
     })
 

@@ -268,6 +268,19 @@ describe('cookie sessions', () => {
 })
 
 describe('server caching', () => {
+  it('awaits request-scoped cart queries as cart data', async () => {
+    const expected = { items: [], itemsCount: 0 }
+    state.clientFactory = (_config, rawSession) => {
+      const client = clientFor(rawSession as SessionStore)
+      client.cart.get = () => query('cart', 'get', async () => expected as never, 'session')
+      return client
+    }
+
+    const storefront = createStorefront({ url: 'https://woo.test', sessionSecret: 'test-secret' })
+
+    expect(await storefront.cart.get()).toBe(expected)
+  })
+
   it('bypasses Next caching whenever the request session has a customer token', async () => {
     state.cookieJar.set(
       SESSION_COOKIE_NAME,
@@ -292,6 +305,35 @@ describe('server caching', () => {
 })
 
 describe('webhook revalidation', () => {
+  it('accepts the feature plugin HMAC signature over the exact request body', async () => {
+    const storefront = createStorefront({ url: 'https://woo.test', sessionSecret: 'test-secret' })
+    const handler = storefront.revalidateHandler({ secret: 'webhook-secret' })
+    const body = JSON.stringify({ event: 'stock.updated', productIds: [42] })
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode('webhook-secret'),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    )
+    const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body)))
+    const signature = `sha256=${[...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`
+
+    const response = await handler(
+      new Request('https://app.test/api/store/revalidate', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-woo-storefront-signature': signature,
+        },
+        body,
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ revalidated: true, tags: ['products', 'product-42'] })
+  })
+
   it('maps product ids and scopes to the shared cache tag taxonomy', async () => {
     const storefront = createStorefront({ url: 'https://woo.test', sessionSecret: 'test-secret' })
     const handler = storefront.revalidateHandler({ secret: 'webhook-secret' })

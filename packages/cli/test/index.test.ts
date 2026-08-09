@@ -76,7 +76,7 @@ describe('initStorefront', () => {
     ).resolves.toContain('export const { GET, POST } = woo.handlers')
     await expect(
       readFile(join(directory, 'app/api/store/revalidate/route.ts'), 'utf8'),
-    ).resolves.toContain('export const { POST } = woo.revalidateHandlers')
+    ).resolves.toContain('export const POST = woo.revalidateHandler()')
     await expect(readFile(join(directory, '.env.example'), 'utf8')).resolves.toBe(
       'WOO_URL=\nWOO_SESSION_SECRET=\n',
     )
@@ -96,7 +96,7 @@ describe('initStorefront', () => {
     )
     await expect(
       readFile(join(directory, 'routes/api/store/revalidate.ts'), 'utf8'),
-    ).resolves.toContain('server: woo.revalidateServerRoute')
+    ).resolves.toContain('server: { handlers: { POST: woo.revalidateRoute } }')
   })
 
   it('places generated source files under src when the app uses a src layout', async () => {

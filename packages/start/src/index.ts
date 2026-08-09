@@ -72,6 +72,7 @@ export interface StartStorefrontConfig extends StorefrontConfig {
 }
 
 export const DEFAULT_REVALIDATE_SECRET_HEADER = 'x-woo-webhook-secret'
+export const WOO_STOREFRONT_SIGNATURE_HEADER = 'x-woo-storefront-signature'
 
 function stableSerialize(value: unknown): string {
   if (value === undefined) return 'undefined'
@@ -416,6 +417,19 @@ function timingSafeEqual(left: string, right: string): boolean {
   return difference === 0
 }
 
+async function hmacSignature(body: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(body))
+  return `sha256=${[...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`
+}
+
 function asPositiveInteger(value: unknown): number | null {
   const numeric = typeof value === 'string' && value !== '' ? Number(value) : value
   return typeof numeric === 'number' && Number.isInteger(numeric) && numeric > 0 ? numeric : null
@@ -467,14 +481,19 @@ function revalidationHandler(
       )
     }
 
+    const body = await request.text()
     const suppliedSecret = request.headers.get(headerName)
-    if (!suppliedSecret || !timingSafeEqual(suppliedSecret, secret)) {
+    const suppliedSignature = request.headers.get(WOO_STOREFRONT_SIGNATURE_HEADER)
+    const hasRawSecret = suppliedSecret !== null && timingSafeEqual(suppliedSecret, secret)
+    const hasValidSignature = suppliedSignature !== null
+      && timingSafeEqual(suppliedSignature, await hmacSignature(body, secret))
+    if (!hasRawSecret && !hasValidSignature) {
       return errorResponse(new RpcProtocolError('Invalid webhook secret', 401, 'unauthorized'))
     }
 
     let tags: string[]
     try {
-      tags = webhookTags(await request.json())
+      tags = webhookTags(JSON.parse(body) as unknown)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid webhook payload'
       return errorResponse(new RpcProtocolError(message, 400, 'invalid_webhook_payload'))

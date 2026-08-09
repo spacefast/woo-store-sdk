@@ -9,6 +9,7 @@ export {
 } from './session'
 export {
   DEFAULT_REVALIDATE_SECRET_HEADER,
+  WOO_STOREFRONT_SIGNATURE_HEADER,
   type RevalidateHandlerOptions,
   type RevalidateRouteHandler,
 } from './revalidate'

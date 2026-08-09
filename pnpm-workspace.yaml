@@ -1,2 +1,8 @@
+allowBuilds:
+  '@parcel/watcher': false
+  '@swc/core': false
+  esbuild: false
+
 packages:
   - "packages/*"
+  - "examples/*"

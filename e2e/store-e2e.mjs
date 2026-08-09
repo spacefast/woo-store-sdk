@@ -175,7 +175,7 @@ console.log('\n== Order placement (headless POST /checkout, COD) ==')
 let placedOrderId
 await check('checkout.submit places a COD order for a virtual product', async () => {
   await woo.auth.login.mutationFn({ email, password })
-  await woo.cart.addItem.mutationFn({ id: 14, quantity: 1 })
+  await woo.cart.addItem.mutationFn({ id: firstProduct.id, quantity: 1 })
   const result = await woo.checkout.submit.mutationFn({
     billingAddress: {
       firstName: 'E2E',

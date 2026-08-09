@@ -1,5 +1,5 @@
 declare module 'next/cache' {
-  export function revalidateTag(tag: string): void
+  export function revalidateTag(tag: string, profile: 'max'): void
 
   export function unstable_cache<TArgs extends unknown[], TResult>(
     callback: (...args: TArgs) => Promise<TResult>,

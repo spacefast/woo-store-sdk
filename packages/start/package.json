@@ -21,6 +21,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tanstack/start-server-core": "1.169.17",
     "@woo/storefront-core": "workspace:*",
     "@woo/storefront-react": "workspace:*"
   },
