@@ -8,7 +8,7 @@ set -euo pipefail
 apache_pid=$!
 trap 'kill -TERM "$apache_pid" 2>/dev/null || true' TERM INT
 
-until [[ -f /var/www/html/wp-config.php ]] && wp db check --allow-root --path=/var/www/html >/dev/null 2>&1; do
+until [[ -f /var/www/html/wp-config.php ]]; do
   if ! kill -0 "$apache_pid" 2>/dev/null; then
     wait "$apache_pid"
     exit $?
@@ -17,16 +17,23 @@ until [[ -f /var/www/html/wp-config.php ]] && wp db check --allow-root --path=/v
 done
 
 cd /var/www/html
-if ! wp core is-installed --allow-root; then
-  wp core install \
+until wp core is-installed --allow-root; do
+  if wp core install \
     --allow-root \
     --url="$WORDPRESS_URL" \
     --title="Woo Store SDK Demo" \
     --admin_user="${WORDPRESS_ADMIN_USER:-demo-admin}" \
     --admin_password="$WORDPRESS_ADMIN_PASSWORD" \
     --admin_email="${WORDPRESS_ADMIN_EMAIL:-demo@example.com}" \
-    --skip-email
-fi
+    --skip-email; then
+    break
+  fi
+  if ! kill -0 "$apache_pid" 2>/dev/null; then
+    wait "$apache_pid"
+    exit $?
+  fi
+  sleep 2
+done
 
 cp -a /usr/src/wordpress/wp-content/plugins/woocommerce/. wp-content/plugins/woocommerce/
 mkdir -p wp-content/plugins/woo-storefront
