@@ -13,7 +13,7 @@ export function createCustomerResource(
         queryFn: async () => {
           const response = await transport.request<Customer>({
             method: 'GET',
-            path: `${PLUGIN_API}/customer/profile`,
+            path: `${PLUGIN_API}/customer`,
             profile: 'session',
           }, session)
           return response.data
@@ -60,8 +60,8 @@ export function createCustomerResource(
       mutationFn: async (variables) => {
         const response = await transport.request<Customer>({
           method: 'PUT',
-          path: `${PLUGIN_API}/customer/addresses/${variables.type}`,
-          body: addressPayload(variables.address),
+          path: `${PLUGIN_API}/customer/address`,
+          body: { type: variables.type, address: addressPayload(variables.address) },
           profile: 'session',
         }, session)
         return response.data

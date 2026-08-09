@@ -28,6 +28,12 @@ export function createCheckoutResource(
         { type: 'resource', resource: 'orders' },
       ],
       mutationFn: async (variables) => {
+        // Same bootstrap as cart mutations: checkout needs a Cart-Token,
+        // which a fresh headless session only gets from a cart response.
+        const { cartToken } = await session.read()
+        if (!cartToken) {
+          await transport.request<unknown>({ method: 'GET', path: `${STORE_API}/cart`, profile: 'session' }, session)
+        }
         const response = await transport.request<unknown>({
           method: 'POST',
           path: `${STORE_API}/checkout`,

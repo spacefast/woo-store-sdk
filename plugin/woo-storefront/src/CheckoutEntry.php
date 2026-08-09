@@ -217,8 +217,15 @@ final class CheckoutEntry {
 	private function set_session_cookie( string $customer_id, int $expiration ): void {
 		$cookie_name = 'wp_woocommerce_session_' . COOKIEHASH;
 		$expiring    = max( time(), $expiration - HOUR_IN_SECONDS );
-		$cookie_hash = hash_hmac( 'md5', $customer_id . '|' . $expiration, wp_hash( $customer_id ) );
-		$cookie      = $customer_id . '||' . $expiration . '||' . $expiring . '||' . $cookie_hash;
+
+		// Mirror WC_Session_Handler exactly: hash over "customer_id|expiration",
+		// via wp_fast_hash on WP 6.8+ (`$generic$…`) with the pre-6.8 HMAC
+		// fallback, and single-pipe field delimiters (current cookie format).
+		$to_hash     = $customer_id . '|' . $expiration;
+		$cookie_hash = function_exists( 'wp_fast_hash' )
+			? wp_fast_hash( $to_hash )
+			: hash_hmac( 'md5', $to_hash, wp_hash( $to_hash ) );
+		$cookie      = implode( '|', array( $customer_id, (string) $expiration, (string) $expiring, $cookie_hash ) );
 
 		wc_setcookie( $cookie_name, $cookie, $expiration, is_ssl(), true );
 		$_COOKIE[ $cookie_name ] = $cookie;

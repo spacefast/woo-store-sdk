@@ -32,6 +32,39 @@ final class Auth {
 	 */
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+		add_filter( 'determine_current_user', array( $this, 'bridge_rest_user' ), 20 );
+	}
+
+	/**
+	 * Authenticate Store API and plugin REST requests that carry a customer
+	 * access token, so core surfaces (checkout, cart, draft orders) attach
+	 * the logged-in customer instead of treating the session as a guest.
+	 *
+	 * @param int|false $user_id User determined so far.
+	 * @return int|false
+	 */
+	public function bridge_rest_user( $user_id ) {
+		if ( $user_id ) {
+			return $user_id;
+		}
+
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+		if ( false === strpos( $request_uri, '/wc/store/' ) && false === strpos( $request_uri, '/' . self::REST_NAMESPACE . '/' ) ) {
+			return $user_id;
+		}
+
+		$authorization = isset( $_SERVER['HTTP_AUTHORIZATION'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_AUTHORIZATION'] ) ) : '';
+		if ( ! preg_match( '/^Bearer\s+(\S+)$/i', $authorization, $matches ) ) {
+			return $user_id;
+		}
+
+		$claims = $this->validate_token( $matches[1], 'access' );
+		if ( is_wp_error( $claims ) ) {
+			return $user_id;
+		}
+
+		$customer_id = (int) $claims['sub'];
+		return ( $customer_id > 0 && get_user_by( 'id', $customer_id ) ) ? $customer_id : $user_id;
 	}
 
 	/**
@@ -305,7 +338,7 @@ final class Auth {
 	 * @return string
 	 */
 	private function request_cart_token( WP_REST_Request $request ): string {
-		$header = $request->get_header( 'Cart-Token' );
+		$header = (string) $request->get_header( 'Cart-Token' );
 		return '' !== $header ? $header : (string) $request->get_param( 'cart_token' );
 	}
 

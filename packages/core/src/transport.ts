@@ -266,13 +266,15 @@ function mapResponsePayload(path: string, payload: unknown): unknown {
   if (/\/woo-storefront\/v1\/customer\/orders\/\d+\/?$/u.test(pathname)) return mapOrder(payload)
   if (/\/woo-storefront\/v1\/customer\/orders\/?$/u.test(pathname)) {
     if (Array.isArray(payload)) return payload.map(mapOrderSummary)
-    return array(record(payload).orders).map(mapOrderSummary)
+    // The plugin returns an { items, total, totalPages } envelope (spec §9).
+    const envelope = record(payload)
+    return array(envelope.items ?? envelope.orders).map(mapOrderSummary)
   }
-  if (/\/woo-storefront\/v1\/customer\/profile\/?$/u.test(pathname)) {
+  if (/\/woo-storefront\/v1\/customer(?:\/profile)?\/?$/u.test(pathname)) {
     const source = record(payload)
     return mapCustomer(source.customer ?? payload)
   }
-  if (/\/woo-storefront\/v1\/customer\/addresses(?:\/[^/]+)?\/?$/u.test(pathname)) {
+  if (/\/woo-storefront\/v1\/customer\/address(?:es)?(?:\/[^/]+)?\/?$/u.test(pathname)) {
     const source = record(payload)
     return mapCustomer(source.customer ?? payload)
   }

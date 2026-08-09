@@ -69,6 +69,10 @@ describe('Start storefront RPC route', () => {
           headers: { 'X-WP-Total': '1', 'X-WP-TotalPages': '1' },
         })
       }
+      if (url.pathname.endsWith('/cart') && init?.method !== 'POST') {
+        // ensureCartToken bootstrap fetch issued before the first mutation.
+        return Response.json(emptyCartPayload, { headers: { 'Cart-Token': 'bootstrap-token' } })
+      }
       expect(url.pathname).toMatch(/\/cart\/add-item$/u)
       expect(init?.method).toBe('POST')
       expect(JSON.parse(String(init?.body))).toEqual({ id: 7, quantity: 2 })
@@ -129,7 +133,7 @@ describe('Start storefront RPC route', () => {
   })
 
   it('persists Cart-Token rotation before completing an RPC response', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
       Response.json(emptyCartPayload, { headers: { 'Cart-Token': 'rotated-cart-token' } }),
     )
     const storefront = createStorefront({

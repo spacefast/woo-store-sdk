@@ -81,6 +81,17 @@ export function createCartResource(transport: Transport, session: SessionStore):
     return response.data
   }
 
+  /**
+   * Store API cart mutations require a nonce OR a Cart-Token, and a fresh
+   * headless session has neither — the token only arrives on a cart
+   * response header. Bootstrap by fetching the cart once before the first
+   * mutation so the rotated Cart-Token lands in the session.
+   */
+  const ensureCartToken = async (): Promise<void> => {
+    const { cartToken } = await session.read()
+    if (!cartToken) await freshCart()
+  }
+
   return {
     get() {
       return {
@@ -95,6 +106,7 @@ export function createCartResource(transport: Transport, session: SessionStore):
       invalidates: [...CART_INVALIDATION],
       optimisticUpdate: optimisticAdd,
       mutationFn: async (variables) => {
+        await ensureCartToken()
         const response = await transport.request<Cart>({
           method: 'POST',
           path: `${STORE_API}/cart/add-item`,
@@ -114,6 +126,7 @@ export function createCartResource(transport: Transport, session: SessionStore):
       invalidates: [...CART_INVALIDATION],
       optimisticUpdate,
       mutationFn: async (variables) => {
+        await ensureCartToken()
         const response = await transport.request<Cart>({
           method: 'POST',
           path: `${STORE_API}/cart/update-item`,
@@ -129,6 +142,7 @@ export function createCartResource(transport: Transport, session: SessionStore):
       invalidates: [...CART_INVALIDATION],
       optimisticUpdate: optimisticRemove,
       mutationFn: async (variables) => {
+        await ensureCartToken()
         const response = await transport.request<Cart>({
           method: 'POST',
           path: `${STORE_API}/cart/remove-item`,
@@ -143,6 +157,7 @@ export function createCartResource(transport: Transport, session: SessionStore):
       mutationKey: queryKey('cart', 'applyCoupon'),
       invalidates: [...CART_INVALIDATION],
       mutationFn: async (variables) => {
+        await ensureCartToken()
         const response = await transport.request<Cart>({
           method: 'POST',
           path: `${STORE_API}/cart/apply-coupon`,
@@ -157,6 +172,7 @@ export function createCartResource(transport: Transport, session: SessionStore):
       mutationKey: queryKey('cart', 'removeCoupon'),
       invalidates: [...CART_INVALIDATION],
       mutationFn: async (variables) => {
+        await ensureCartToken()
         const response = await transport.request<Cart>({
           method: 'POST',
           path: `${STORE_API}/cart/remove-coupon`,
