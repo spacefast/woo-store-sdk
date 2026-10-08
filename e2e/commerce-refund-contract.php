@@ -19,4 +19,17 @@ $full = wc_create_refund( array(
 if ( is_wp_error( $full ) || wc_get_order( $order->get_id() )->is_download_permitted() ) {
 	throw new RuntimeException( 'Native full refund retained paid access.' );
 }
-echo "PASS: native partial refund preserves paid access; native full refund revokes it\n";
+$payments = new \SpacefastCommerce\PaymentOrders( new \SpacefastCommerce\Store() );
+$snapshot = $payments->for_gateway( $order->get_id() );
+$late = new WP_REST_Request( 'PUT' );
+$late->set_param( 'id', $order->get_id() );
+$late->set_header( 'Content-Type', 'application/json' );
+$late->set_body( wp_json_encode( array(
+	'action' => 'paid', 'attempt_id' => $snapshot['attempt_id'], 'intent_id' => $snapshot['intent_id'],
+	'total' => $snapshot['total'], 'currency' => $snapshot['currency'],
+) ) );
+$result = $payments->apply( $late );
+if ( ! is_wp_error( $result ) || 'payment_order_closed' !== $result->get_error_code() || wc_get_order( $order->get_id() )->is_download_permitted() ) {
+	throw new RuntimeException( 'Late paid result reopened a refunded order.' );
+}
+echo "PASS: native partial refund preserves paid access; native full refund revokes it; late payment result cannot reopen it\n";

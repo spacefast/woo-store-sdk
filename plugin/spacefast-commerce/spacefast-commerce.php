@@ -21,6 +21,7 @@ require_once __DIR__ . '/src/ManagedProducts.php';
 require_once __DIR__ . '/src/PrivateFiles.php';
 require_once __DIR__ . '/src/Catalog.php';
 require_once __DIR__ . '/src/Provisioning.php';
+require_once __DIR__ . '/src/PaymentOrders.php';
 
 add_action( 'before_woocommerce_init', static function (): void {
 	if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
@@ -28,16 +29,29 @@ add_action( 'before_woocommerce_init', static function (): void {
 	}
 } );
 
+add_action( 'woocommerce_blocks_loaded', static function (): void {
+	require_once __DIR__ . '/src/BlockPayment.php';
+	add_action( 'woocommerce_blocks_payment_method_type_registration', static function ( $registry ): void {
+		$registry->register( new \SpacefastCommerce\BlockPayment() );
+	} );
+} );
+
 add_action( 'plugins_loaded', static function (): void {
 	if ( ! class_exists( 'WooCommerce' ) ) {
 		return;
 	}
+	require_once __DIR__ . '/src/Gateway.php';
+	add_filter( 'woocommerce_payment_gateways', static function ( array $gateways ): array {
+		$gateways[] = \SpacefastCommerce\Gateway::class;
+		return $gateways;
+	} );
 	$store = new \SpacefastCommerce\Store();
 	$managed = new \SpacefastCommerce\ManagedProducts();
 	$managed->register();
 	$files = new \SpacefastCommerce\PrivateFiles( $store );
 	$files->register();
 	( new \SpacefastCommerce\Provisioning( $store, $files ) )->register();
+	( new \SpacefastCommerce\PaymentOrders( $store ) )->register();
 	( new \SpacefastCommerce\Catalog( $store, $managed, $files ) )->register();
 	$store->register();
 }, 30 );

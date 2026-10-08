@@ -10,9 +10,10 @@ Stripe platform secrets never belong in this plugin or its binding.
 
 == Development status ==
 
-This is the managed-catalog foundation of the Sell replacement. Gateway,
-provisioning readiness and operational actions are
-still under implementation. Do not enable live payments with this version.
+This is the managed-catalog and native payment boundary of the Sell replacement.
+The API payment transport, verified event relay, full provisioning readiness
+and operational actions are still under implementation. Do not enable live
+payments with this version.
 
 == Store binding ==
 
@@ -123,3 +124,35 @@ catalog_ready covers only schema/private-storage inventory. Page readiness
 checks native content and Space ownership; it does not prove HTTP admission.
 The platform must separately prove public routes, mail, cron
 execution and payment connectivity before declaring the store ready.
+
+== Native payment boundary ==
+
+The spacefast_connect gateway is registered for classic checkout and Checkout
+Block. It remains unavailable without installer-owned private constants
+SPACEFAST_COMMERCE_API_ORIGIN (HTTPS) and SPACEFAST_COMMERCE_API_CREDENTIAL.
+No platform Stripe key belongs in these constants. The API endpoint
+POST /v1/commerce/payments is still being implemented; configuring these
+constants alone does not establish readiness.
+
+Woo constructs the authenticated request from its own persisted order, with
+stable store/environment/order/attempt identity and the final native total.
+The API must derive the connected account and application fee and provide an
+account-scoped PaymentIntent confirmation. The gateway forwards buyers to
+Woo's protected order-pay page, where Stripe-hosted fields confirm using the
+API-provided connected-account context. Return URLs come from native Woo.
+Browser confirmation never marks an order paid.
+
+GET /wp-json/spacefast-commerce/v1/orders/{id}/payment provides the trusted
+native snapshot; PUT on the same path binds an intent or applies an API-verified
+paid result. Both require the exact bound store credential and headers. The
+body carries action (bind_intent or paid), attempt_id, intent_id, total (native
+decimal string), and currency. Only source-managed single-product quantity-one
+orders using this gateway are admitted. A different intent, attempt or amount
+is refused. An unpaid recalculated total requires intent synchronization before
+completion. Native order metadata and a database lock serialize result writes;
+retries use Woo payment_complete once, retaining native grants and mail. Closed
+or refunded orders cannot be reopened by a late paid result.
+
+Native boundary tests prove these transitions in CPT and HPOS. Stripe.js,
+real Connect payments, 3DS and API event delivery still require their integration
+proof; the local native result contract does not claim it.
