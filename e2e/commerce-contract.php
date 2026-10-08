@@ -54,9 +54,10 @@ $headers = array(
 	'X-Spacefast-Store-Id' => $binding['store_id'],
 	'X-Spacefast-Environment' => 'test',
 );
-function commerce_request( string $method, string $path, array $headers, ?array $body = null ): WP_REST_Response {
+function commerce_request( string $method, string $path, array $headers, ?array $body = null, array $query = array() ): WP_REST_Response {
 	$request = new WP_REST_Request( $method, '/spacefast-commerce/v1' . $path );
 	$request->set_headers( $headers );
+	$request->set_query_params( $query );
 	if ( null !== $body ) {
 		$request->set_header( 'Content-Type', 'application/json' );
 		$request->set_body( wp_json_encode( $body ) );
@@ -325,6 +326,47 @@ file_put_contents( '/tmp/commerce-download-contract.json', wp_json_encode( array
 	'original_email' => $buyer_email,
 	'product_id' => $id,
 ) ) );
+// Reads are native history: source removal must not hide the paid order or rewrite its line.
+$history_path = '/orders/' . $digital_order->get_id();
+$history = commerce_request( 'GET', $history_path, $headers );
+commerce_check( 200 === $history->get_status(), 'Native order history was hidden by catalog changes.' );
+$history_data = $history->get_data()['data'];
+commerce_check( $digital_order->get_id() === $history_data['order_id'] && $buyer_email === $history_data['buyer_email'], 'Native order detail did not use its captured buyer.' );
+commerce_check( current( $digital_order->get_items() )->get_name() === $history_data['items'][0]['name'], 'Native order line was replaced by current source content.' );
+commerce_check( 401 === commerce_request( 'GET', '/orders', array() )->get_status(), 'Native orders accepted an anonymous read.' );
+commerce_check( 403 === commerce_request( 'GET', $history_path, $wrong_headers )->get_status(), 'Native history crossed caller environments.' );
+commerce_check( 404 === commerce_request( 'GET', '/orders/' . $order->get_id(), $headers )->get_status(), 'Native view accepted an unrelated gateway order.' );
+// Root fixture creates native foreign-scope rows; each field can independently leak if its query predicate is removed.
+$original_binding = get_option( 'spacefast_commerce_binding' );
+$foreign_ids = array();
+try {
+	foreach ( array( 'space_id'=>'spc_foreign', 'store_id'=>'foreign-store', 'environment'=>'live' ) as $field => $value ) {
+		$foreign_binding = $original_binding;
+		$foreign_binding[$field] = $value;
+		update_option( 'spacefast_commerce_binding', $foreign_binding );
+		$foreign = wc_create_order();
+		$foreign->set_payment_method( 'spacefast_connect' );
+		$foreign->save();
+		$foreign_ids[] = $foreign->get_id();
+	}
+} finally {
+	update_option( 'spacefast_commerce_binding', $original_binding );
+}
+try {
+	foreach ( $foreign_ids as $foreign_id ) {
+		commerce_check( 404 === commerce_request( 'GET', '/orders/' . $foreign_id, $headers )->get_status(), 'Native detail leaked foreign scope.' );
+	}
+	$page = commerce_request( 'GET', '/orders', $headers, null, array( 'limit'=>1, 'page'=>1 ) );
+	commerce_check( 200 === $page->get_status(), 'Native order page failed.' );
+	$page_data = $page->get_data()['data'];
+	commerce_check( 1 === count( $page_data['orders'] ) && $new_order->get_id() === $page_data['orders'][0]['order_id'] && 2 === $page_data['next_page'], 'Native bounded pagination did not filter foreign orders before paging.' );
+	commerce_check( !array_key_exists( 'buyer_email', $page_data['orders'][0] ) && !array_key_exists( 'shipping', $page_data['orders'][0] ), 'Native order summary exposed buyer details.' );
+} finally {
+	foreach ( $foreign_ids as $foreign_id ) {
+		wc_get_order( $foreign_id )->delete( true );
+	}
+}
+echo "PASS: scoped native order list/detail, bounded pagination, historical lines and buyer-detail separation\n";
 $rotated = array_merge( $binding, array( 'credential' => bin2hex( random_bytes( 32 ) ) ) );
 commerce_check( true === $store->bind( $rotated ), 'Credential rotation failed.' );
 commerce_check( 401 === commerce_request( 'GET', '/products', $headers )->get_status(), 'Revoked credential still works.' );
