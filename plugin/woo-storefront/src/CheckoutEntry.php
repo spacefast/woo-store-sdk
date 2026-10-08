@@ -118,6 +118,10 @@ final class CheckoutEntry {
 	 * Redirect a completed checkout to its still-valid signed return target.
 	 */
 	public function redirect_after_order(): void {
+		if ( ! apply_filters( 'woo_storefront_checkout_redirect_after_order', true ) ) {
+			return;
+		}
+
 		if ( ! function_exists( 'is_order_received_page' ) || ! is_order_received_page() || ! function_exists( 'WC' ) || ! WC()->session ) {
 			return;
 		}
