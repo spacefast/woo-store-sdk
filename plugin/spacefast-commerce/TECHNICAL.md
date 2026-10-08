@@ -64,3 +64,17 @@ Refundability requires a paid undisputed order with remaining balance and a
 matching bound transaction. Pending retry remains available after a full refund.
 Automatic digital fulfillment may have no tracking number; the native view emits
 an empty number while preserving its ordinary fulfilled record.
+
+
+### Scheduled payment reconciliation
+
+`Reconciliation` listens to native order saves after the gateway persists
+`_spacefast_payment_requested_at` before its first API request. Action Scheduler
+owns one job for the captured order/attempt in the `spacefast-commerce` group.
+The hook authenticates the original store and POSTs only `order_id` and
+`attempt_id` to `/commerce/reconcile`; the API owns the immutable account/amount
+proof and queues native delivery. Job errors remain visible in Action Scheduler
+and preserve a successor. Pending orders check every five minutes, paid/refunded
+history hourly. Unbound/replaced attempts stop without requesting the API.
+Actual reliable cron, hosted mail and provider route readiness remain external
+acceptance gates; visitor-driven WP cron is insufficient.

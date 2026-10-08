@@ -17,6 +17,29 @@ if ( 'create' === ( $args[0] ?? '' ) ) {
 if ( ! $order ) {
 	throw new RuntimeException( 'Relay order was not found.' );
 }
+if ( 'schedule' === ( $args[0] ?? '' ) ) {
+	$order->update_meta_data( '_spacefast_payment_requested_at', gmdate( 'c' ) );
+	$order->save();
+	$order->save();
+	$job_args = array( $order->get_id(), $order->get_meta( '_spacefast_payment_attempt' ) );
+	$pending = as_get_scheduled_actions( array( 'hook' => 'spacefast_commerce_reconcile_payment',
+		'args' => $job_args, 'group' => 'spacefast-commerce', 'status' => ActionScheduler_Store::STATUS_PENDING ), 'ids' );
+	if ( 1 !== count( $pending ) ) {
+		throw new RuntimeException( 'Native payment must have exactly one scheduled reconciliation.' );
+	}
+	as_unschedule_all_actions( 'spacefast_commerce_reconcile_payment', $job_args, 'spacefast-commerce' );
+	as_schedule_single_action( time() - 1, 'spacefast_commerce_reconcile_payment', $job_args, 'spacefast-commerce', true );
+}
+if ( 'scheduled' === ( $args[0] ?? '' ) ) {
+	$job_args = array( $order->get_id(), $order->get_meta( '_spacefast_payment_attempt' ) );
+	foreach ( array( ActionScheduler_Store::STATUS_PENDING, ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler_Store::STATUS_FAILED ) as $status ) {
+		$jobs = as_get_scheduled_actions( array( 'hook' => 'spacefast_commerce_reconcile_payment',
+			'args' => $job_args, 'group' => 'spacefast-commerce', 'status' => $status ), 'ids' );
+		if ( 1 !== count( $jobs ) ) {
+			throw new RuntimeException( 'Action Scheduler must complete the native job and retain one successor.' );
+		}
+	}
+}
 $payments = new \SpacefastCommerce\PaymentOrders( new \SpacefastCommerce\Store() );
 if ( 'create' === $args[0] ) {
 	$snapshot = $payments->for_gateway( $order->get_id() );

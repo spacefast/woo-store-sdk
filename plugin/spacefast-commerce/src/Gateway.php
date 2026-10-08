@@ -38,6 +38,9 @@ final class Gateway extends \WC_Payment_Gateway {
 			wc_add_notice( 'Payments are unavailable for this order.', 'error' );
 			return array( 'result' => 'failure' );
 		}
+		$order = wc_get_order( $order_id );
+		$order->update_meta_data( '_spacefast_payment_requested_at', gmdate( 'c' ) );
+		$order->save();
 		// This body is constructed in Woo, never forwarded from browser payment data.
 		$response = wp_remote_post( rtrim( SPACEFAST_COMMERCE_API_ORIGIN, '/' ) . '/commerce/payments', array(
 			'timeout' => 35, 'redirection' => 0,

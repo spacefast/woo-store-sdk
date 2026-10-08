@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.1
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.1.11
+Stable tag: 0.1.12
 License: GPLv2 or later
 
 Managed commerce for one Space and environment per WordPress installation.
@@ -190,7 +190,20 @@ Native boundary tests prove these transitions in CPT and HPOS. Stripe.js,
 real Connect payments, 3DS and API event delivery still require their integration
 proof; the local native result contract does not claim it.
 
+Native Action Scheduler jobs begin when the gateway captures an attempted payment.
+Each job submits only order/attempt identity to the authenticated API, which checks
+its retained original payment and queues current Stripe status/refund/dispute
+reconciliation. Jobs never create a charge. Pending orders retry every five
+minutes; historical orders check hourly. API failures retain a successor job.
+Repeated order saves do not duplicate jobs, and a changed store or attempt stops
+the old job. A reliable external minute cron runner remains required; installing
+this module does not prove provider cron execution.
+
 == Changelog ==
+
+= 0.1.12 =
+* Schedule authenticated payment reconciliation with retry after API interruption.
+
 
 = 0.1.11 =
 * Expose native refundable balance, eligibility and pending command recovery.

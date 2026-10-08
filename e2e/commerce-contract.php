@@ -250,6 +250,14 @@ commerce_check( 404 === commerce_request( 'GET', '/orders/' . $order->get_id() .
 $payment = commerce_request( 'GET', $payment_path, $headers );
 commerce_check( 200 === $payment->get_status(), 'Trusted native payment snapshot failed.' );
 $snapshot = $payment->get_data()['data'];
+$digital_order->update_meta_data( '_spacefast_payment_requested_at', gmdate( 'c' ) );
+$digital_order->save();
+$digital_order->save();
+$scheduled = as_get_scheduled_actions( array( 'hook' => 'spacefast_commerce_reconcile_payment',
+	'args' => array( $digital_order->get_id(), $digital_order->get_meta( '_spacefast_payment_attempt' ) ),
+	'group' => 'spacefast-commerce', 'status' => ActionScheduler_Store::STATUS_PENDING ), 'ids' );
+commerce_check( 1 === count( $scheduled ), 'Repeated native saves must retain one payment reconciliation job.' );
+
 commerce_check( $digital_order->get_total() === $snapshot['total'] && $digital_order->get_currency() === $snapshot['currency'] && '' !== $snapshot['attempt_id'], 'Payment snapshot did not use the native order.' );
 $payment_result = array( 'action' => 'bind_intent', 'attempt_id' => $snapshot['attempt_id'], 'intent_id' => 'pi_contract' . $digital_order->get_id(), 'total' => $snapshot['total'], 'currency' => $snapshot['currency'] );
 commerce_check( 409 === commerce_request( 'PUT', $payment_path, $headers, array_merge( $payment_result, array( 'total' => '0.01' ) ) )->get_status(), 'Payment accepted an amount different from the native order.' );
