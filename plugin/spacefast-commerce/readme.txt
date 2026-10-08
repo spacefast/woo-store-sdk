@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.1
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.1.1
+Stable tag: 0.1.2
 License: GPLv2 or later
 
 Managed commerce for one Space and environment per WordPress installation.

@@ -50,7 +50,7 @@ final class Catalog {
 			return new \WP_Error( 'catalog_invalid', 'Desired product keys must be distinct.', array( 'status' => 422 ) );
 		}
 		// Retired history is not a desired-state scan. Include active rows and explicitly desired keys.
-		$products = wc_get_products( array(
+		$products = $this->products( array(
 			'limit' => 101,
 			'status' => array( 'publish', 'private' ),
 			'meta_query' => array(
@@ -62,7 +62,7 @@ final class Catalog {
 			return new \WP_Error( 'catalog_limit_exceeded', 'The active managed catalog exceeds 100 products.', array( 'status' => 409 ) );
 		}
 		if ( $keys ) {
-			$desired = wc_get_products( array(
+			$desired = $this->products( array(
 				'limit' => 101,
 				'status' => array( 'publish', 'draft', 'private' ),
 				'meta_query' => array(
@@ -211,8 +211,24 @@ final class Catalog {
 		} );
 	}
 
+	/** Woo ignores arbitrary meta_query arguments; its native query extension owns this clause. */
+	private function products( array $args ): array {
+		$filter = static function ( array $query, array $vars ) use ( $args ): array {
+			if ( true === ( $vars['spacefast_catalog_query'] ?? false ) ) {
+				$query['meta_query'] = array( 'relation' => 'AND', $query['meta_query'] ?? array(), $args['meta_query'] );
+			}
+			return $query;
+		};
+		add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $filter, 10, 2 );
+		try {
+			return wc_get_products( array_merge( $args, array( 'spacefast_catalog_query' => true ) ) );
+		} finally {
+			remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $filter, 10 );
+		}
+	}
+
 	private function find( string $key ): array|\WP_Error {
-		$found = wc_get_products( array(
+		$found = $this->products( array(
 			'limit' => 2,
 			'status' => array( 'publish', 'draft', 'private' ),
 			'meta_query' => array(
