@@ -84,7 +84,12 @@ The installer must configure SPACEFAST_COMMERCE_PUBLIC_ROOT to the actual
 public document root and SPACEFAST_COMMERCE_PRIVATE_ROOT to a writable
 persistent directory outside it. Do not infer the document root from ABSPATH:
 managed hosts can keep WordPress core in a separate shared tree. Missing or
-public storage configuration fails closed.
+public storage configuration fails closed. On Spacefast, the verified runtime
+loader supplies spacefast_commerce_runtime_private_root instead. It confines
+each store to the runtime's protected .stattic/storage tree and rejects another
+request Space, traversal and symlink backing. This location is visible to the
+provider's PHP workers; SSH home directories above htdocs are not. The hosting
+integration must prove anonymous URL denial and native download delivery.
 
 PUT /wp-json/spacefast-commerce/v1/files/{sha256} accepts raw bytes and an
 X-Spacefast-Filename header (URL-encoded safe filename), with the same bound

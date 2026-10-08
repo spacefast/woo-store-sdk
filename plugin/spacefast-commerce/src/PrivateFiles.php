@@ -24,8 +24,12 @@ final class PrivateFiles {
 		add_filter( 'pre_option_woocommerce_downloads_redirect_fallback_allowed', fn ( mixed $value ): mixed => $this->store->binding() ? 'no' : $value );
 	}
 
-	/** Require an explicitly configured directory outside the explicitly configured public web root. */
+	/** Spacefast owns its protected engine root; other hosts require storage outside the web root. */
 	public function root(): string|\WP_Error {
+		if ( function_exists( 'spacefast_commerce_runtime_private_root' ) ) {
+			$root = spacefast_commerce_runtime_private_root( $this->store->binding() );
+			return is_string( $root ) ? $root : new \WP_Error( 'private_storage_invalid', 'Protected runtime storage is unavailable for this store.', array( 'status' => 503 ) );
+		}
 		$configured = defined( 'SPACEFAST_COMMERCE_PRIVATE_ROOT' ) ? SPACEFAST_COMMERCE_PRIVATE_ROOT : '';
 		$public_root = defined( 'SPACEFAST_COMMERCE_PUBLIC_ROOT' ) ? SPACEFAST_COMMERCE_PUBLIC_ROOT : '';
 		$public = is_string( $public_root ) && '' !== $public_root ? realpath( $public_root ) : false;
