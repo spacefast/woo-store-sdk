@@ -18,6 +18,11 @@ services:
       - '127.0.0.1:${COMMERCE_MAIL_PORT:-28984}:8025'
   wordpress:
     image: wordpress@sha256:f32ffa85064d9c951b7b69c929fa2a9f682aa4443e0c0a56ac2000499cb64383
+    healthcheck:
+      test: [CMD, curl, --silent, --fail, 'http://127.0.0.1/wp-admin/install.php']
+      interval: 2s
+      timeout: 5s
+      retries: 60
     depends_on:
       db:
         condition: service_healthy
