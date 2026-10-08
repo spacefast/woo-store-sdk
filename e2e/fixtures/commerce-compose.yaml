@@ -1,0 +1,35 @@
+# Dedicated disposable credentials: test-only, no external or merchant data.
+services:
+  db:
+    image: mariadb@sha256:805c8e104bd563d5bfa24fadd3f31cd419ea859cb5277f32b5dbf2db714f9ed1
+    environment:
+      MARIADB_ROOT_PASSWORD: disposable-commerce-root
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: disposable-commerce-db
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+  mail:
+    image: axllent/mailpit@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+    ports:
+      - '127.0.0.1:${COMMERCE_MAIL_PORT:-28984}:8025'
+  wordpress:
+    image: wordpress@sha256:f32ffa85064d9c951b7b69c929fa2a9f682aa4443e0c0a56ac2000499cb64383
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${COMMERCE_HTTP_PORT:-28983}:80'
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: disposable-commerce-db
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_CONFIG_EXTRA: |
+        define('SPACEFAST_COMMERCE_PRIVATE_ROOT', '/var/www/commerce-private');
+        define('SPACEFAST_COMMERCE_PUBLIC_ROOT', '/var/www/html');
+    volumes:
+      - ../../plugin:/var/www/html/wp-content/plugins/spacefast-dev:ro

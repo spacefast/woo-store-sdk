@@ -55,7 +55,18 @@ wp eval-file e2e/commerce-contract.php
 
 For the full native HTTP, email and refund contract, use:
 
-pnpm test:e2e:commerce
+pnpm test:e2e:commerce:fixture
+
+This creates a dedicated Docker Compose fixture with pinned images, verifies
+the Woo and WP-CLI download hashes, installs the native plugins and runs the
+contract. Local URLs default to http://127.0.0.1:28983 (WordPress) and
+http://127.0.0.1:28984 (Mailpit). COMMERCE_HTTP_PORT and COMMERCE_MAIL_PORT can
+override them. Credentials are intentionally disposable test-only values.
+The fixture is retained for inspection; remove it with:
+
+pnpm test:e2e:commerce:down
+
+For an already prepared disposable installation, run pnpm test:e2e:commerce.
 
 The runner requires a dedicated disposable Docker WordPress container
 (COMMERCE_WP_CONTAINER, default sell-managed-woo-wp) with PHP WP-CLI at

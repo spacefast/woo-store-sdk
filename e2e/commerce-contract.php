@@ -97,6 +97,15 @@ foreach ( $file_bodies as $filename => $bytes ) {
 	$upload->set_headers( $headers );
 	$upload->set_header( 'X-Spacefast-Filename', rawurlencode( $filename ) );
 	$upload->set_body( $bytes );
+	$unauthenticated = clone $upload;
+	$unauthenticated->set_header( 'Authorization', '' );
+	commerce_check( 401 === rest_do_request( $unauthenticated )->get_status(), 'Private ingestion accepted an anonymous caller.' );
+	$wrong_bytes = clone $upload;
+	$wrong_bytes->set_body( $bytes . 'modified' );
+	commerce_check( 422 === rest_do_request( $wrong_bytes )->get_status(), 'Private ingestion accepted mismatched bytes.' );
+	$traversal = clone $upload;
+	$traversal->set_header( 'X-Spacefast-Filename', rawurlencode( '../public.pdf' ) );
+	commerce_check( 422 === rest_do_request( $traversal )->get_status(), 'Private ingestion accepted a traversal filename.' );
 	$receipt = rest_do_request( $upload );
 	commerce_check( 200 === $receipt->get_status(), 'Private upload failed: ' . wp_json_encode( $receipt->get_data() ) );
 	$file_receipts[] = array( 'sha256' => $sha, 'filename' => $filename );
