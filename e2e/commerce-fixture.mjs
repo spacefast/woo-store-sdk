@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +36,9 @@ try {
   );
   compose('up', '-d', '--wait', '--wait-timeout', '180');
   const container = execFileSync('docker', [...composeArgs, 'ps', '-q', 'wordpress'], { cwd: root, encoding: 'utf8' }).trim();
+  const publishedOrigin = (service, port) => `http://${execFileSync('docker', [...composeArgs, 'port', service, String(port)], { cwd: root, encoding: 'utf8' }).trim()}`;
+  const origin = publishedOrigin('wordpress', 80);
+  const mailOrigin = publishedOrigin('mail', 8025);
   const docker = (...args) => execFileSync('docker', args, { cwd: root, stdio: 'inherit' });
   const wp = (...args) => docker('exec', '--user', 'www-data', container, 'php', '/usr/local/bin/wp-cli.phar', ...args);
   docker('cp', wpCli, `${container}:/usr/local/bin/wp-cli.phar`);
@@ -49,7 +52,6 @@ try {
     chown -R www-data:www-data /var/www/html/wp-content/uploads
   `);
   // The official image writes wp-config on its first HTTP request.
-  const origin = `http://127.0.0.1:${process.env.COMMERCE_HTTP_PORT ?? '28983'}`;
   await fetch(origin);
   const installed = spawnSync('docker', ['exec', '--user', 'www-data', container, 'php', '/usr/local/bin/wp-cli.phar', 'core', 'is-installed'], { stdio: 'pipe' });
   if (installed.status === 1) {
@@ -63,8 +65,11 @@ try {
   wp('plugin', 'install', '/tmp/woocommerce.zip', '--activate', '--force');
   wp('plugin', 'activate', 'woo-storefront', 'spacefast-commerce');
   const binding = path.join(directory, 'store.json');
-  writeFileSync(binding, JSON.stringify({ space_id: 'spc_contract', store_id: 'contract', environment: 'test',
-    origin: 'https://contract.example.test', currency: 'USD', country: 'PL', credential: randomBytes(32).toString('hex') }), { mode: 0o600 });
+  const storeBinding = process.env.COMMERCE_STORE_BINDING_FILE
+    ? JSON.parse(readFileSync(process.env.COMMERCE_STORE_BINDING_FILE, 'utf8'))
+    : { space_id: 'spc_contract', store_id: 'contract', environment: 'test',
+      origin: 'https://contract.example.test', currency: 'USD', country: 'PL', credential: randomBytes(32).toString('hex') };
+  writeFileSync(binding, JSON.stringify(storeBinding), { mode: 0o600 });
   docker('cp', binding, `${container}:/tmp/commerce-store.json`);
   docker('exec', container, 'chown', 'www-data:www-data', '/tmp/commerce-store.json');
   try {
@@ -75,10 +80,11 @@ try {
   wp('rewrite', 'structure', '/%postname%/');
   wp('rewrite', 'flush', '--hard');
   docker('cp', 'e2e/fixtures/commerce-mail.php', `${container}:/var/www/html/wp-content/mu-plugins/commerce-test-mail.php`);
-  execFileSync(process.execPath, ['e2e/commerce-e2e.mjs'], {
+  if (process.argv[2] !== 'prepare') execFileSync(process.execPath, ['e2e/commerce-e2e.mjs'], {
     cwd: root, stdio: 'inherit', env: { ...process.env, COMMERCE_WP_CONTAINER: container,
-      COMMERCE_MAILPIT_URL: `http://127.0.0.1:${process.env.COMMERCE_MAIL_PORT ?? '28984'}` },
+      COMMERCE_MAILPIT_URL: mailOrigin },
   });
+  console.log('COMMERCE_FIXTURE_READY ' + JSON.stringify({ project, container, origin, mailOrigin }));
   console.log('Fixture retained for inspection. Remove with pnpm test:e2e:commerce:down.');
 } finally {
   rmSync(directory, { recursive: true, force: true });
