@@ -88,6 +88,8 @@ final class Catalog {
 			'key' => $product->get_meta( '_spacefast_product_key' ),
 			'name' => $product->get_name(),
 			'description' => $product->get_description(),
+			'cover_image' => $this->cover_source( (int) $product->get_image_id() ),
+			'gallery_image_ids' => $product->get_gallery_image_ids(),
 			'price' => $product->get_regular_price(),
 			'sale_price' => $product->get_sale_price(),
 			'date_on_sale_from' => $product->get_date_on_sale_from()?->getTimestamp(),
@@ -134,7 +136,7 @@ final class Catalog {
 				return new \WP_REST_Response( array( 'data' => $this->projection( $product ) ) );
 			} );
 		}
-		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'generation', 'name', 'description', 'price', 'enabled', 'kind', 'downloads', 'download_limit', 'download_expiry', 'shipping' ) ) ||
+		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'generation', 'name', 'description', 'cover_image', 'price', 'enabled', 'kind', 'downloads', 'download_limit', 'download_expiry', 'shipping' ) ) ||
 			! is_int( $input['generation'] ?? null ) || $input['generation'] < 1 ||
 			! is_string( $input['name'] ?? null ) || '' === trim( $input['name'] ) || strlen( $input['name'] ) > 255 ||
 			! is_string( $input['description'] ?? null ) || strlen( $input['description'] ) > 65536 ||
@@ -144,6 +146,13 @@ final class Catalog {
 		}
 		if ( sanitize_text_field( $input['name'] ) !== $input['name'] || wp_kses_post( $input['description'] ) !== $input['description'] ) {
 			return new \WP_Error( 'catalog_invalid', 'Use a plain product name and safe description HTML.', array( 'status' => 422 ) );
+		}
+		if ( ! array_key_exists( 'cover_image', $input ) || ( null !== $input['cover_image'] && (
+			! is_string( $input['cover_image'] ) || strlen( $input['cover_image'] ) > 2048 ||
+			'https' !== wp_parse_url( $input['cover_image'], PHP_URL_SCHEME ) ||
+			wp_parse_url( $input['cover_image'], PHP_URL_USER ) || wp_parse_url( $input['cover_image'], PHP_URL_PASS )
+		) ) ) {
+			return new \WP_Error( 'catalog_invalid', 'Supply a public HTTPS cover image URL or null.', array( 'status' => 422 ) );
 		}
 		$shipping = $input['shipping'] ?? null;
 		if ( ( 'digital' === $input['kind'] && null !== $shipping ) || ( 'physical' === $input['kind'] && (
@@ -182,10 +191,17 @@ final class Catalog {
 				return $found;
 			}
 			$product = $found ? new \WC_Product_Simple( $found[0]->get_id() ) : new \WC_Product_Simple();
-			$this->managed->apply( function () use ( $product, $input, $request, $downloads, $shipping ): void {
+			$image_id = $this->cover_attachment( $product, $input['cover_image'] );
+			if ( is_wp_error( $image_id ) ) {
+				return $image_id;
+			}
+			$this->managed->apply( function () use ( $product, $input, $request, $downloads, $shipping, $image_id ): void {
 				$product->set_name( $input['name'] );
 				$product->set_description( wp_kses_post( $input['description'] ) );
 				$product->set_short_description( '' );
+				$product->set_image_id( $image_id );
+				$product->set_gallery_image_ids( array() );
+				$product->update_meta_data( '_spacefast_cover_attachment', $image_id );
 				$product->set_sku( '' );
 				$product->set_catalog_visibility( 'visible' );
 				$product->set_regular_price( $input['price'] );
@@ -216,6 +232,33 @@ final class Catalog {
 			} );
 			return new \WP_REST_Response( array( 'data' => $this->projection( $product ) ) );
 		} );
+	}
+
+	/** Native media owns the bytes and thumbnails; URL declarations never become browser bypass flags. */
+	private function cover_source( int $image_id ): ?string {
+		$file = $image_id ? get_attached_file( $image_id ) : false;
+		$source = $image_id ? get_post_meta( $image_id, '_spacefast_cover_source', true ) : '';
+		return is_string( $source ) && '' !== $source && $file && is_file( $file ) ? $source : null;
+	}
+
+	private function cover_attachment( \WC_Product $product, ?string $source ): int|\WP_Error {
+		if ( null === $source ) {
+			return 0;
+		}
+		$previous = (int) $product->get_meta( '_spacefast_cover_attachment' );
+		if ( $previous && $source === $this->cover_source( $previous ) ) {
+			return $previous;
+		}
+		$upload = wc_rest_upload_image_from_url( $source );
+		if ( is_wp_error( $upload ) ) {
+			return new \WP_Error( 'catalog_cover_unavailable', 'The declared cover image could not be installed: ' . $upload->get_error_message(), array( 'status' => 503 ) );
+		}
+		$image_id = wc_rest_set_uploaded_image_as_attachment( $upload, $product->get_id() );
+		if ( ! $image_id ) {
+			return new \WP_Error( 'catalog_cover_unavailable', 'The declared cover image attachment could not be created.', array( 'status' => 503 ) );
+		}
+		update_post_meta( $image_id, '_spacefast_cover_source', $source );
+		return $image_id;
 	}
 
 	/** Woo ignores arbitrary meta_query arguments; its native query extension owns this clause. */

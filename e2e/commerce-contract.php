@@ -67,9 +67,15 @@ $readiness = commerce_request( 'GET', '/readiness', $headers );
 commerce_check( 200 === $readiness->get_status() && true === $readiness->get_data()['data']['catalog_ready'], 'Prepared native schemas and private storage are not ready.' );
 commerce_check( true === $readiness->get_data()['data']['checkout_pages_ready'], 'Prepared native checkout pages are not ready.' );
 commerce_check( 401 === commerce_request( 'GET', '/readiness', array() )->get_status(), 'Readiness leaked to an unauthenticated caller.' );
+// Retire only prior native products from this disposable contract, including interrupted runs.
+foreach ( commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'] as $prior ) {
+	if ( str_starts_with( $prior['key'], 'contract-' ) ) {
+		commerce_check( 200 === commerce_request( 'PUT', '/products/' . $prior['key'], $headers, array( 'generation' => (int) get_option( 'spacefast_commerce_catalog_generation' ) + 1, 'action' => 'archive' ) )->get_status(), 'Interrupted contract product could not be retired.' );
+	}
+}
 $key = 'contract-' . strtolower( wp_generate_password( 8, false ) );
 $path = '/products/' . $key;
-$product_data = array( 'generation' => (int) get_option( 'spacefast_commerce_catalog_generation', 0 ) + 1, 'name' => 'Source product', 'description' => '<p>Source description</p>', 'price' => '12.50', 'enabled' => true, 'kind' => 'physical', 'shipping' => array( 'included' => true, 'allowedCountries' => array( 'PL' ), 'policy' => 'Ships to Poland. Shipping is included.' ) );
+$product_data = array( 'generation' => (int) get_option( 'spacefast_commerce_catalog_generation', 0 ) + 1, 'name' => 'Source product', 'description' => '<p>Source description</p>', 'cover_image' => 'https://raw.githubusercontent.com/WordPress/WordPress/master/wp-admin/images/wordpress-logo.png', 'price' => '12.50', 'enabled' => true, 'kind' => 'physical', 'shipping' => array( 'included' => true, 'allowedCountries' => array( 'PL' ), 'policy' => 'Ships to Poland. Shipping is included.' ) );
 commerce_check( 401 === commerce_request( 'PUT', $path, array(), $product_data )->get_status(), 'Unauthenticated catalog write succeeded.' );
 $wrong_headers = array_merge( $headers, array( 'X-Spacefast-Environment' => 'live' ) );
 commerce_check( 403 === commerce_request( 'PUT', $path, $wrong_headers, $product_data )->get_status(), 'Cross-environment catalog write succeeded.' );
@@ -77,8 +83,14 @@ commerce_check( 422 === commerce_request( 'PUT', $path, $headers, array_merge( $
 $response = commerce_request( 'PUT', $path, $headers, $product_data );
 commerce_check( 200 === $response->get_status(), 'Catalog create failed: ' . wp_json_encode( $response->get_data() ) );
 $id = $response->get_data()['data']['id'];
+$image_id = (int) wc_get_product( $id )->get_image_id();
+commerce_check( $image_id > 0 && $product_data['cover_image'] === $response->get_data()['data']['cover_image'], 'Source cover did not become native media.' );
+$image_url = wp_get_attachment_image_url( $image_id, 'woocommerce_thumbnail' );
+commerce_check( is_string( $image_url ) && str_contains( wc_get_product( $id )->get_image(), esc_url( $image_url ) ), 'Classic Woo product image did not use the installed cover.' );
+$store_product = rest_do_request( new WP_REST_Request( 'GET', '/wc/store/v1/products/' . $id ) );
+commerce_check( 200 === $store_product->get_status() && $image_id === $store_product->get_data()['images'][0]->id, 'Store API product image did not use native media: ' . wp_json_encode( $store_product->get_data() ) );
 $retry = commerce_request( 'PUT', $path, $headers, $product_data );
-commerce_check( $id === $retry->get_data()['data']['id'], 'Retry duplicated a product.' );
+commerce_check( $id === $retry->get_data()['data']['id'] && $image_id === (int) wc_get_product( $id )->get_image_id(), 'Retry duplicated a product or its cover attachment.' );
 $read = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
 commerce_check( in_array( $id, array_column( $read, 'id' ), true ), 'Managed catalog cannot read its own products.' );
 $missing_archive = commerce_request( 'PUT', '/products/absent-' . $key, $headers, array( 'generation' => $product_data['generation'], 'action' => 'archive' ) );
@@ -118,6 +130,7 @@ WC()->cart->empty_cart();
 foreach ( array(
 	fn () => ( function () use ( $id ): void { $product = wc_get_product( $id ); $product->set_regular_price( '99' ); $product->save(); } )(),
 	fn () => update_post_meta( $id, '_price', '99' ),
+	fn () => update_post_meta( $id, '_thumbnail_id', 0 ),
 	fn () => update_post_meta( $id, '_spacefast_shipping', array( 'included' => true, 'allowedCountries' => array( 'DE' ) ) ),
 	fn () => wp_update_post( array( 'ID' => $id, 'post_title' => 'Browser edit' ) ),
 ) as $write ) {
@@ -145,6 +158,7 @@ $line = current( $order->get_items() );
 // A root SQL override bypasses hooks; the next source sync must observe and repair it.
 global $wpdb;
 $wpdb->update( $wpdb->postmeta, array( 'meta_value' => '99.00' ), array( 'post_id' => $id, 'meta_key' => '_regular_price' ) );
+$wpdb->update( $wpdb->postmeta, array( 'meta_value' => '0' ), array( 'post_id' => $id, 'meta_key' => '_thumbnail_id' ) );
 
 $sale_starts = time() + 3600;
 $wpdb->insert( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => '_sale_price_dates_from', 'meta_value' => $sale_starts ) );
@@ -152,15 +166,20 @@ $wpdb->insert( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => '_sale_pr
 clean_post_cache( $id );
 $drifted = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
 $drifted = current( array_filter( $drifted, static fn ( array $row ): bool => $row['id'] === $id ) );
-commerce_check( '99.00' === $drifted['price'] && $sale_starts === $drifted['date_on_sale_from'], 'Catalog read concealed a root-managed price override.' );
+commerce_check( '99.00' === $drifted['price'] && $sale_starts === $drifted['date_on_sale_from'] && null === $drifted['cover_image'], 'Catalog read concealed a root-managed price override.' );
 $product_data['generation']++;
 $product_data['name'] = 'New source name';
 $product_data['price'] = '15.00';
 commerce_check( 200 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Source update failed.' );
 commerce_check( '15.00' === wc_get_product( $id )->get_regular_price() && null === wc_get_product( $id )->get_date_on_sale_from() && null === wc_get_product( $id )->get_date_on_sale_to(), 'Source price was not applied.' );
+commerce_check( $image_id === (int) wc_get_product( $id )->get_image_id(), 'Source repair duplicated or lost the original cover attachment.' );
 commerce_check( 'Source product' === $line->get_name() && '12.5' === (string) $line->get_total(), 'Product deploy changed purchased order lines.' );
 $stale = array_merge( $product_data, array( 'generation' => $product_data['generation'] - 1 ) );
 commerce_check( 409 === commerce_request( 'PUT', $path, $headers, $stale )->get_status(), 'Stale deployment overwrote catalog.' );
+$product_data['generation']++;
+$product_data['cover_image'] = null;
+$cleared = commerce_request( 'PUT', $path, $headers, $product_data );
+commerce_check( 200 === $cleared->get_status() && 0 === (int) wc_get_product( $id )->get_image_id() && null === $cleared->get_data()['data']['cover_image'], 'Removing the source cover left a native image.' );
 $product_data['enabled'] = false;
 commerce_check( 200 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Archive failed.' );
 commerce_check( 'draft' === wc_get_product( $id )->get_status(), 'Removed product remains available.' );

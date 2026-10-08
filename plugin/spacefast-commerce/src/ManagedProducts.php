@@ -9,7 +9,7 @@ final class ManagedProducts {
 	private array $source_meta = array(
 		'_regular_price', '_sale_price', '_price', '_sale_price_dates_from', '_sale_price_dates_to',
 		'_virtual', '_downloadable', '_downloadable_files', '_download_limit', '_download_expiry',
-		'_spacefast_download_history', '_spacefast_shipping', '_sku', '_visibility', '_sold_individually', '_manage_stock', '_spacefast_product_key', '_spacefast_space_id',
+		'_thumbnail_id', '_product_image_gallery', '_spacefast_cover_attachment', '_spacefast_download_history', '_spacefast_shipping', '_sku', '_visibility', '_sold_individually', '_manage_stock', '_spacefast_product_key', '_spacefast_space_id',
 	);
 
 	public function register(): void {
@@ -43,7 +43,7 @@ final class ManagedProducts {
 		}
 		$owned = array( 'name', 'description', 'short_description', 'status', 'regular_price', 'sale_price', 'price',
 			'date_on_sale_from', 'date_on_sale_to', 'virtual', 'downloadable', 'downloads', 'download_limit',
-			'download_expiry', 'sku', 'catalog_visibility', 'sold_individually', 'manage_stock' );
+			'download_expiry', 'image_id', 'gallery_image_ids', 'sku', 'catalog_visibility', 'sold_individually', 'manage_stock' );
 		if ( 'simple' !== $product->get_type() || array_intersect( array_keys( $product->get_changes() ), $owned ) ) {
 			throw new \WC_Data_Exception( 'source_managed_product', 'Edit this product in the Space source.', 403 );
 		}
