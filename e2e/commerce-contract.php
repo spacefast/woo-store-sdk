@@ -73,12 +73,13 @@ $product_data = array( 'generation' => (int) get_option( 'spacefast_commerce_cat
 commerce_check( 401 === commerce_request( 'PUT', $path, array(), $product_data )->get_status(), 'Unauthenticated catalog write succeeded.' );
 $wrong_headers = array_merge( $headers, array( 'X-Spacefast-Environment' => 'live' ) );
 commerce_check( 403 === commerce_request( 'PUT', $path, $wrong_headers, $product_data )->get_status(), 'Cross-environment catalog write succeeded.' );
+commerce_check( 422 === commerce_request( 'PUT', $path, $headers, array_merge( $product_data, array( 'description' => '<script>unsafe()</script>' ) ) )->get_status(), 'Source description was silently rewritten instead of refused.' );
 $response = commerce_request( 'PUT', $path, $headers, $product_data );
 commerce_check( 200 === $response->get_status(), 'Catalog create failed: ' . wp_json_encode( $response->get_data() ) );
 $id = $response->get_data()['data']['id'];
 $retry = commerce_request( 'PUT', $path, $headers, $product_data );
 commerce_check( $id === $retry->get_data()['data']['id'], 'Retry duplicated a product.' );
-$read = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$read = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
 commerce_check( in_array( $id, array_column( $read, 'id' ), true ), 'Managed catalog cannot read its own products.' );
 $missing_archive = commerce_request( 'PUT', '/products/absent-' . $key, $headers, array( 'generation' => $product_data['generation'], 'action' => 'archive' ) );
 commerce_check( 200 === $missing_archive->get_status() && null === $missing_archive->get_data()['data'], 'Archiving a missing key changed a different managed product.' );
@@ -86,7 +87,7 @@ $ordinary = new WC_Product_Simple();
 $ordinary->set_name( 'Unmanaged catalog neighbor' );
 $ordinary->set_status( 'publish' );
 $ordinary->save();
-$managed_read = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$managed_read = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
 commerce_check( ! in_array( $ordinary->get_id(), array_column( $managed_read, 'id' ), true ), 'Managed catalog read included an unmanaged product.' );
 $ordinary->delete( true );
 $product = wc_get_product( $id );
@@ -144,15 +145,19 @@ $line = current( $order->get_items() );
 // A root SQL override bypasses hooks; the next source sync must observe and repair it.
 global $wpdb;
 $wpdb->update( $wpdb->postmeta, array( 'meta_value' => '99.00' ), array( 'post_id' => $id, 'meta_key' => '_regular_price' ) );
+
+$sale_starts = time() + 3600;
+$wpdb->insert( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => '_sale_price_dates_from', 'meta_value' => $sale_starts ) );
+$wpdb->insert( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => '_sale_price_dates_to', 'meta_value' => $sale_starts + 3600 ) );
 clean_post_cache( $id );
-$drifted = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$drifted = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
 $drifted = current( array_filter( $drifted, static fn ( array $row ): bool => $row['id'] === $id ) );
-commerce_check( '99.00' === $drifted['price'], 'Catalog read concealed a root-managed price override.' );
+commerce_check( '99.00' === $drifted['price'] && $sale_starts === $drifted['date_on_sale_from'], 'Catalog read concealed a root-managed price override.' );
 $product_data['generation']++;
 $product_data['name'] = 'New source name';
 $product_data['price'] = '15.00';
 commerce_check( 200 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Source update failed.' );
-commerce_check( '15.00' === wc_get_product( $id )->get_regular_price(), 'Source price was not applied.' );
+commerce_check( '15.00' === wc_get_product( $id )->get_regular_price() && null === wc_get_product( $id )->get_date_on_sale_from() && null === wc_get_product( $id )->get_date_on_sale_to(), 'Source price was not applied.' );
 commerce_check( 'Source product' === $line->get_name() && '12.5' === (string) $line->get_total(), 'Product deploy changed purchased order lines.' );
 $stale = array_merge( $product_data, array( 'generation' => $product_data['generation'] - 1 ) );
 commerce_check( 409 === commerce_request( 'PUT', $path, $headers, $stale )->get_status(), 'Stale deployment overwrote catalog.' );
@@ -194,7 +199,7 @@ $product_data['downloads'] = array( $file_receipts[0] );
 $product_data['download_limit'] = 5;
 $product_data['download_expiry'] = 30;
 commerce_check( 200 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Download catalog apply failed.' );
-$projection = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$projection = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
 $projection = current( array_filter( $projection, static fn ( array $row ): bool => $row['id'] === $id ) );
 commerce_check( array( $file_receipts[0] ) === $projection['downloads'] && 5 === $projection['download_limit'] && 30 === $projection['download_expiry'] && null === $projection['shipping'], 'Source sync cannot observe protected file declarations and download policy.' );
 $digital_order = wc_create_order();
@@ -231,9 +236,20 @@ commerce_check( $digital_order->is_paid() && $payment_result['intent_id'] === $d
 $original_downloads = $digital_order->get_downloadable_items();
 commerce_check( 1 === count( $original_downloads ), 'Woo did not grant the paid file.' );
 $original_download = current( $original_downloads );
+// Root can corrupt backing bytes; the same authenticated source upload restores the granted path.
+file_put_contents( $original_download['file']['file'], 'Root-corrupted download bytes' );
+$corrupt = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
+$corrupt = current( array_filter( $corrupt, static fn ( array $row ): bool => $row['id'] === $id ) );
+commerce_check( null === $corrupt['downloads'], 'Source sync hid corrupted protected bytes.' );
+$repair = new WP_REST_Request( 'PUT', '/spacefast-commerce/v1/files/' . $file_receipts[0]['sha256'] );
+$repair->set_headers( $headers );
+$repair->set_header( 'X-Spacefast-Filename', rawurlencode( 'purchased.pdf' ) );
+$repair->set_body( $file_bodies['purchased.pdf'] );
+commerce_check( 200 === rest_do_request( $repair )->get_status(), 'Hash-verified source upload did not repair corrupted bytes.' );
+commerce_check( $file_bodies['purchased.pdf'] === file_get_contents( $original_download['file']['file'] ) && $original_download['download_id'] === current( wc_get_order( $digital_order->get_id() )->get_downloadable_items() )['download_id'], 'Repair changed the native grant or its purchased bytes.' );
 $wpdb->update( $wpdb->postmeta, array( 'meta_value' => maybe_serialize( array( 'root_override' => array( 'name' => 'Public drift', 'file' => 'https://untrusted.example/private.pdf' ) ) ) ), array( 'post_id' => $id, 'meta_key' => '_downloadable_files' ) );
 clean_post_cache( $id );
-$drifted = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$drifted = commerce_request( 'GET', '/products', $headers )->get_data()['data']['products'];
 $drifted = current( array_filter( $drifted, static fn ( array $row ): bool => $row['id'] === $id ) );
 commerce_check( null === $drifted['downloads'] && ! str_contains( wp_json_encode( $drifted ), 'untrusted.example' ), 'Unsafe download drift leaked a backing URL instead of a repair signal.' );
 $product_data['generation']++;
@@ -264,9 +280,19 @@ commerce_check( 200 === commerce_request( 'PUT', $path, $headers, array( 'genera
 $retired = new WP_REST_Request( 'GET', '/spacefast-commerce/v1/products' );
 $retired->set_headers( $headers );
 $retired->set_param( 'keys', array( $key ) );
-$retired = rest_do_request( $retired )->get_data()['data'];
+$retired = rest_do_request( $retired )->get_data()['data']['products'];
 $retired = current( array_filter( $retired, static fn ( array $row ): bool => $row['id'] === $id ) );
 commerce_check( false === $retired['enabled'] && array( $file_receipts[1] ) === $retired['downloads'], 'Desired-key read lost retained native archive state.' );
+$prior_generation = (int) get_option( 'spacefast_commerce_catalog_generation' );
+update_option( 'woocommerce_currency', 'EUR' );
+try {
+	$empty = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+	commerce_check( 'EUR' === $empty['currency'] && array() === $empty['products'], 'Empty catalog hid native currency drift.' );
+	commerce_check( 409 === commerce_request( 'PUT', '/catalog/fence', $headers, array( 'generation' => $prior_generation + 1 ) )->get_status(), 'Currency drift advanced an empty catalog fence.' );
+	commerce_check( $prior_generation === (int) get_option( 'spacefast_commerce_catalog_generation' ) && 'USD' === wc_get_order( $digital_order->get_id() )->get_currency(), 'Currency refusal changed catalog ownership or historical order currency.' );
+} finally {
+	update_option( 'woocommerce_currency', 'USD' );
+}
 $fence = array( 'generation' => $product_data['generation'] + 1 );
 commerce_check( 200 === commerce_request( 'PUT', '/catalog/fence', $headers, $fence )->get_status(), 'Empty-catalog generation was not fenced.' );
 commerce_check( 409 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'An older apply reopened an archived product after an empty-catalog fence.' );

@@ -78,10 +78,12 @@ final class PrivateFiles {
 			return new \WP_Error( 'private_storage_unavailable', 'Download storage could not be prepared.', array( 'status' => 503 ) );
 		}
 		$path = $directory . '/' . $filename;
-		if ( is_link( $path ) ) {
+		if ( is_link( $path ) || ( file_exists( $path ) && ! is_file( $path ) ) ) {
 			return new \WP_Error( 'private_storage_invalid', 'A download path is not a regular file.', array( 'status' => 503 ) );
 		}
-		if ( ! is_file( $path ) ) {
+		$stored_hash = is_file( $path ) ? hash_file( 'sha256', $path ) : false;
+		// Source bytes have already passed the hash check; repair corruption without changing grant paths.
+		if ( ! is_string( $stored_hash ) || ! hash_equals( $request['sha256'], $stored_hash ) ) {
 			$temp = tempnam( $directory, '.ingest-' );
 			if ( ! is_string( $temp ) ) {
 				return new \WP_Error( 'private_storage_unavailable', 'Download storage is unavailable.', array( 'status' => 503 ) );
@@ -96,7 +98,8 @@ final class PrivateFiles {
 				}
 			}
 		}
-		if ( ! hash_equals( $request['sha256'], hash_file( 'sha256', $path ) ) ) {
+		$committed_hash = hash_file( 'sha256', $path );
+		if ( ! is_string( $committed_hash ) || ! hash_equals( $request['sha256'], $committed_hash ) ) {
 			return new \WP_Error( 'private_file_integrity', 'Stored download bytes failed integrity verification.', array( 'status' => 503 ) );
 		}
 		return new \WP_REST_Response( array( 'data' => array( 'sha256' => $request['sha256'], 'filename' => $filename, 'size' => strlen( $bytes ) ) ) );

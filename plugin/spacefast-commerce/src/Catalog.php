@@ -79,7 +79,7 @@ final class Catalog {
 		foreach ( $products as $product ) {
 			$unique[$product->get_id()] = $product;
 		}
-		return new \WP_REST_Response( array( 'data' => array_values( array_map( array( $this, 'projection' ), $unique ) ) ) );
+		return new \WP_REST_Response( array( 'data' => array( 'currency' => get_woocommerce_currency(), 'products' => array_values( array_map( array( $this, 'projection' ), $unique ) ) ) ) );
 	}
 
 	private function projection( \WC_Product $product ): array {
@@ -90,6 +90,8 @@ final class Catalog {
 			'description' => $product->get_description(),
 			'price' => $product->get_regular_price(),
 			'sale_price' => $product->get_sale_price(),
+			'date_on_sale_from' => $product->get_date_on_sale_from()?->getTimestamp(),
+			'date_on_sale_to' => $product->get_date_on_sale_to()?->getTimestamp(),
 			'currency' => get_woocommerce_currency(),
 			'type' => $product->get_type(),
 			'status' => $product->get_status(),
@@ -140,6 +142,9 @@ final class Catalog {
 			! is_bool( $input['enabled'] ?? null ) || ! in_array( $input['kind'] ?? null, array( 'digital', 'physical' ), true ) ) {
 			return new \WP_Error( 'catalog_invalid', 'Product fields or deployment generation are invalid.', array( 'status' => 422 ) );
 		}
+		if ( sanitize_text_field( $input['name'] ) !== $input['name'] || wp_kses_post( $input['description'] ) !== $input['description'] ) {
+			return new \WP_Error( 'catalog_invalid', 'Use a plain product name and safe description HTML.', array( 'status' => 422 ) );
+		}
 		$shipping = $input['shipping'] ?? null;
 		if ( ( 'digital' === $input['kind'] && null !== $shipping ) || ( 'physical' === $input['kind'] && (
 			! is_array( $shipping ) || array_diff( array_keys( $shipping ), array( 'included', 'allowedCountries', 'policy' ) ) ||
@@ -185,6 +190,8 @@ final class Catalog {
 				$product->set_catalog_visibility( 'visible' );
 				$product->set_regular_price( $input['price'] );
 				$product->set_sale_price( '' );
+				$product->set_date_on_sale_from( null );
+				$product->set_date_on_sale_to( null );
 				$product->set_price( $input['price'] );
 				$product->set_status( $input['enabled'] ? 'publish' : 'draft' );
 				$product->set_virtual( 'digital' === $input['kind'] );
@@ -246,6 +253,9 @@ final class Catalog {
 			return new \WP_Error( 'catalog_busy', 'Another deployment is applying this catalog. Retry.', array( 'status' => 409 ) );
 		}
 		try {
+			if ( get_woocommerce_currency() !== $this->store->binding()['currency'] ) {
+				return new \WP_Error( 'catalog_currency_conflict', 'Restore the configured merchant currency before applying a catalog.', array( 'status' => 409 ) );
+			}
 			if ( $generation < (int) get_option( 'spacefast_commerce_catalog_generation', 0 ) ) {
 				return new \WP_Error( 'catalog_stale', 'A newer deployment owns this catalog.', array( 'status' => 409 ) );
 			}

@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.1
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.1.2
+Stable tag: 0.1.3
 License: GPLv2 or later
 
 Managed commerce for one Space and environment per WordPress installation.
@@ -30,23 +30,29 @@ credential revokes the previous one. Remove the provisioning file after use.
 
 == Deploy-owned catalog ==
 
-GET /wp-json/spacefast-commerce/v1/products reads the managed projection.
+GET /wp-json/spacefast-commerce/v1/products returns {data:{currency,products}}.
+The observed native currency is present even when the catalog is empty.
 It includes active products and retired products explicitly requested with
 keys[]=<desired-key>, with at most 100 desired keys. Retired history is not
 scanned on every deploy. Reads include source-owned fields and private file
 content identities, not backing paths. Invalid download drift is reported as
-downloads=null so the pipeline can repair or report it.
+downloads=null so the pipeline can repair or report it. Re-ingesting hash-verified
+source bytes repairs a corrupted regular file atomically at the same grant path.
 PUT /wp-json/spacefast-commerce/v1/products/{key} applies one pipeline-selected
 product. Headers: Authorization: Bearer <credential>, X-Spacefast-Space-Id,
 X-Spacefast-Store-Id and X-Spacefast-Environment. The pipeline computes the diff
 and sequences writes; the plugin does not discover source or reconcile it.
 
 Product body: generation (positive monotonic deployment integer), name,
-description, price (decimal string), enabled (boolean), kind (digital/physical),
+description (safe Woo HTML), price (decimal string), enabled (boolean), kind (digital/physical),
 downloads (list of sha256/filename declarations), download_limit and
 download_expiry (days). Physical products require shipping: included=true,
 allowedCountries (distinct supported country codes), and policy. Digital
 products have shipping=null. Omitted limits are unlimited and have no expiry.
+Names must be plain text; unsafe description HTML is refused before a write,
+rather than silently changing the source. Sale prices and scheduled sale dates
+are cleared by source apply. Currency drift refuses all catalog writes and
+generation fences until merchant configuration is restored.
 The generation is stable across operation retries. An older generation cannot
 apply after a newer one starts. A source removal uses enabled=false and retains
 native Woo order history. No product deletion endpoint is supplied.
