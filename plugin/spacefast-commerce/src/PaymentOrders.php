@@ -110,24 +110,21 @@ final class PaymentOrders {
 			if ( '' !== $intent && $intent !== $input['intent_id'] ) {
 				return new \WP_Error( 'payment_intent_conflict', 'Another payment intent is bound to this order.', array( 'status' => 409 ) );
 			}
-			if ( 'bind_intent' === $input['action'] ) {
-				if ( ! $order->needs_payment() ) {
-					return new \WP_Error( 'payment_order_closed', 'This native order no longer accepts payment.', array( 'status' => 409 ) );
-				}
+			if ( ( 'bind_intent' === $input['action'] && ! $order->needs_payment() ) ||
+				( 'paid' === $input['action'] && ( ( $order->is_paid() && $order->get_transaction_id() !== $intent ) ||
+					( ! $order->is_paid() && ! $order->needs_payment() ) ) ) ) {
+				return new \WP_Error( 'payment_order_closed', 'This native order no longer accepts this payment result.', array( 'status' => 409 ) );
+			}
+			if ( $order->needs_payment() ) {
+				// A verified API result can arrive after Woo lost the setup response.
+				// Bind and synchronize under this same lock before native completion.
 				$order->update_meta_data( '_spacefast_payment_intent', $input['intent_id'] );
 				$order->update_meta_data( '_spacefast_payment_total', $receipt['total'] );
 				$order->update_meta_data( '_spacefast_payment_currency', $receipt['currency'] );
 				$order->save();
-			} else {
-				if ( '' === $intent || $order->get_meta( '_spacefast_payment_total' ) !== $receipt['total'] ||
-					$order->get_meta( '_spacefast_payment_currency' ) !== $receipt['currency'] ||
-					( $order->is_paid() && $order->get_transaction_id() !== $intent ) ||
-					( ! $order->is_paid() && ! $order->needs_payment() ) ) {
-					return new \WP_Error( 'payment_order_closed', 'The verified result cannot complete this native order.', array( 'status' => 409 ) );
-				}
-				if ( ! $order->is_paid() ) {
-					$order->payment_complete( $intent );
-				}
+			}
+			if ( 'paid' === $input['action'] && ! $order->is_paid() ) {
+				$order->payment_complete( $input['intent_id'] );
 			}
 			return new \WP_REST_Response( array( 'data' => $this->receipt( $order ) ) );
 		} finally {
