@@ -111,10 +111,15 @@ on a merchant site.
 The root installer runs wp spacefast-commerce prepare /private/path/store.json.
 This validates the bound identity, runs Woo’s native synchronous database update
 command and creates missing HPOS tables through Woo’s own synchronizer. Retries
-preserve the existing authoritative order storage mode. The installer deletes
+preserve the existing authoritative order storage mode. Native cart and checkout
+pages receive the store's Space ownership tag so runtime queries can see them.
+Existing page content is preserved; another Space's ownership or a page without
+the native Woo block/shortcode prevents preparation. The installer deletes
 the private binding file afterward. No buyer request performs this setup.
 
 GET /wp-json/spacefast-commerce/v1/readiness requires the same bound credential
-and reports native schema/private-storage inventory. catalog_ready covers only
-that inventory. The platform must separately prove public routes, mail, cron
+and reports native schema/private-storage inventory plus checkout_pages_ready.
+catalog_ready covers only schema/private-storage inventory. Page readiness
+checks native content and Space ownership; it does not prove HTTP admission.
+The platform must separately prove public routes, mail, cron
 execution and payment connectivity before declaring the store ready.

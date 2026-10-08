@@ -19,6 +19,14 @@ commerce_check( 'force' === get_option( 'woocommerce_file_download_method' ), 'W
 commerce_check( false === apply_filters( 'woo_storefront_checkout_redirect_after_order', true ), 'Managed checkout skips Woo receipt.' );
 commerce_check( $binding['origin'] === apply_filters( 'woo_storefront_checkout_return_url', 'https://untrusted.example' ), 'Return target is caller-controlled.' );
 $native_storage_mode = get_option( 'woocommerce_custom_orders_table_enabled' );
+$checkout_id = wc_get_page_id( 'checkout' );
+$checkout_content = get_post( $checkout_id )->post_content;
+$provisioning = new \SpacefastCommerce\Provisioning( $store, new \SpacefastCommerce\PrivateFiles( $store ) );
+update_post_meta( $checkout_id, '_spacefast_space_id', 'spc_other' );
+$conflict = $provisioning->prepare_pages();
+commerce_check( is_wp_error( $conflict ) && 'checkout_page_scope_conflict' === $conflict->get_error_code(), 'Provisioning took another Space checkout page.' );
+commerce_check( 'spc_other' === get_post_meta( $checkout_id, '_spacefast_space_id', true ), 'Conflicting checkout ownership changed.' );
+delete_post_meta( $checkout_id, '_spacefast_space_id' );
 $binding_file = tempnam( sys_get_temp_dir(), 'commerce-binding-' );
 file_put_contents( $binding_file, wp_json_encode( $binding ) );
 try {
@@ -27,7 +35,14 @@ try {
 } finally {
 	unlink( $binding_file );
 }
+// CLI provisioning runs in a separate process; emulate the next HTTP request's fresh post cache.
+foreach ( array( 'cart', 'checkout' ) as $page_name ) {
+	clean_post_cache( wc_get_page_id( $page_name ) );
+}
 commerce_check( $native_storage_mode === get_option( 'woocommerce_custom_orders_table_enabled' ), 'Provisioning changed native order storage authority.' );
+commerce_check( $checkout_content === get_post( $checkout_id )->post_content, 'Provisioning overwrote native checkout content.' );
+$scoped_checkout = get_posts( array( 'post_type' => 'page', 'include' => array( $checkout_id ), 'meta_key' => '_spacefast_space_id', 'meta_value' => $binding['space_id'] ) );
+commerce_check( 1 === count( $scoped_checkout ) && $checkout_id === $scoped_checkout[0]->ID, 'Native checkout is hidden from Space-scoped queries.' );
 
 $headers = array(
 	'Authorization' => 'Bearer ' . $credential,
@@ -46,6 +61,7 @@ function commerce_request( string $method, string $path, array $headers, ?array 
 }
 $readiness = commerce_request( 'GET', '/readiness', $headers );
 commerce_check( 200 === $readiness->get_status() && true === $readiness->get_data()['data']['catalog_ready'], 'Prepared native schemas and private storage are not ready.' );
+commerce_check( true === $readiness->get_data()['data']['checkout_pages_ready'], 'Prepared native checkout pages are not ready.' );
 commerce_check( 401 === commerce_request( 'GET', '/readiness', array() )->get_status(), 'Readiness leaked to an unauthenticated caller.' );
 $key = 'contract-' . strtolower( wp_generate_password( 8, false ) );
 $path = '/products/' . $key;
