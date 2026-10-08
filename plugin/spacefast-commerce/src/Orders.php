@@ -90,7 +90,14 @@ final class Orders {
 		if ( is_wp_error( $order ) ) {
 			return $order;
 		}
+		$records = \WC_Data_Store::load( 'order-fulfillment' )->read_fulfillments( \WC_Order::class, (string) $order->get_id() );
 		return new \WP_REST_Response( array( 'data' => array_merge( $this->summary( $order ), array(
+			'can_resend' => $order->is_paid() && (bool) is_email( $order->get_billing_email() ),
+			'can_ship' => $order->is_paid() && array() !== $this->pending_shipping_items( $order, $records ),
+			'fulfillments' => array_map( static fn ( Fulfillment $record ): array => array(
+				'id' => $record->get_id(), 'status' => $record->get_status(), 'tracking_number' => $record->get_tracking_number(),
+				'tracking_url' => esc_url_raw( $record->get_tracking_url(), array( 'https' ) ) ?: null,
+			), $records ),
 			'buyer_email' => $order->get_billing_email(),
 			'shipping' => $order->get_address( 'shipping' ),
 			'refunded_total' => wc_format_decimal( $order->get_total_refunded(), wc_get_price_decimals() ),
@@ -162,12 +169,7 @@ final class Orders {
 			if ( ! $order->is_paid() ) {
 				return new \WP_Error( 'order_not_paid', 'Only a paid native order can be shipped.', array( 'status' => 409 ) );
 			}
-			$items = array();
-			foreach ( FulfillmentUtils::get_pending_items( $order, $records ) as $pending ) {
-				if ( 'yes' === $pending['item']->get_meta( '_spacefast_requires_shipping' ) ) {
-					$items[] = array( 'item_id' => $pending['item_id'], 'qty' => $pending['qty'] );
-				}
-			}
+			$items = $this->pending_shipping_items( $order, $records );
 			if ( array() === $items ) {
 				return new \WP_Error( 'shipment_empty', 'No unshipped physical items remain.', array( 'status' => 409 ) );
 			}
@@ -186,6 +188,17 @@ final class Orders {
 		} finally {
 			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
 		}
+	}
+
+	/** Native pending quantities plus the purchased requirement, independent of today's product. */
+	private function pending_shipping_items( \WC_Order $order, array $records ): array {
+		$items = array();
+		foreach ( FulfillmentUtils::get_pending_items( $order, $records ) as $pending ) {
+			if ( 'yes' === $pending['item']->get_meta( '_spacefast_requires_shipping' ) ) {
+				$items[] = array( 'item_id' => $pending['item_id'], 'qty' => $pending['qty'] );
+			}
+		}
+		return $items;
 	}
 
 	private function shipment_receipt( \WC_Order $order, Fulfillment $fulfillment ): \WP_REST_Response {

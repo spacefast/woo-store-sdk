@@ -397,7 +397,11 @@ $download_fixture = json_decode( file_get_contents( '/tmp/commerce-download-cont
 $download_fixture['resend_subject'] = WC()->mailer()->get_emails()['WC_Email_Customer_Invoice']->get_subject();
 file_put_contents( '/tmp/commerce-download-contract.json', wp_json_encode( $download_fixture ) );
 // Source converted this product to digital. Its already-purchased physical line still ships.
-$shipment_path = '/orders/' . $shipping_order->get_id() . '/ship';
+$shipment_detail_path = '/orders/' . $shipping_order->get_id();
+$shipment_detail = commerce_request( 'GET', $shipment_detail_path, $headers )->get_data()['data'];
+commerce_check( true === $shipment_detail['can_ship'] && array() === $shipment_detail['fulfillments'], 'Native detail lost the purchased physical shipping requirement.' );
+commerce_check( true === $history_data['can_resend'] && false === $history_data['can_ship'], 'Native detail exposed incorrect digital action eligibility.' );
+$shipment_path = $shipment_detail_path . '/ship';
 $shipment_input = array( 'request_id' => wp_generate_uuid4(), 'tracking_number' => 'native-' . $key, 'tracking_url' => 'https://tracking.example.test/' . $key );
 commerce_check( 401 === commerce_request( 'POST', $shipment_path, array(), $shipment_input )->get_status(), 'Anonymous shipment mutated native fulfillment.' );
 $shipment = commerce_request( 'POST', $shipment_path, $headers, $shipment_input );
@@ -412,6 +416,8 @@ commerce_check( 409 === commerce_request( 'POST', $history_path . '/ship', $head
 $download_fixture['shipping_email'] = $shipping_order->get_billing_email();
 $download_fixture['tracking_url'] = $shipment_input['tracking_url'];
 file_put_contents( '/tmp/commerce-download-contract.json', wp_json_encode( $download_fixture ) );
+$shipment_detail = commerce_request( 'GET', $shipment_detail_path, $headers )->get_data()['data'];
+commerce_check( false === $shipment_detail['can_ship'] && 1 === count( $shipment_detail['fulfillments'] ) && $fulfillments[0]->get_id() === $shipment_detail['fulfillments'][0]['id'] && $shipment_input['tracking_number'] === $shipment_detail['fulfillments'][0]['tracking_number'] && $shipment_input['tracking_url'] === $shipment_detail['fulfillments'][0]['tracking_url'], 'Native detail did not reflect the saved fulfillment and remaining quantity.' );
 echo "PASS: native resend retains permissions; historical physical shipment uses one retry-safe Woo fulfillment\n";
 echo "PASS: scoped native order list/detail, bounded pagination, historical lines and buyer-detail separation\n";
 $rotated = array_merge( $binding, array( 'credential' => bin2hex( random_bytes( 32 ) ) ) );

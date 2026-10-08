@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Spacefast Commerce
  * Description: Source-managed WooCommerce stores and the Spacefast payment boundary.
- * Version: 0.1.6
+ * Version: 0.1.7
  * Requires at least: 7.0
  * Requires PHP: 8.1
  * Requires Plugins: woocommerce, woo-storefront
