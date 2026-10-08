@@ -43,6 +43,11 @@ $merchant_refund->set_headers( array( 'Authorization' => 'Bearer ' . $credential
 if ( 422 !== rest_do_request( $merchant_refund )->get_status() ) {
 	throw new RuntimeException( 'The merchant refund silently selected a fee policy.' );
 }
+// Match the API's Unicode length bound before saving a command that it cannot accept.
+$merchant_refund->set_body( wp_json_encode( array( 'request_id' => wp_generate_uuid4(), 'amount' => '1.00', 'reason' => str_repeat( '🙂', 251 ), 'refund_application_fee' => false ) ) );
+if ( 422 !== rest_do_request( $merchant_refund )->get_status() ) {
+	throw new RuntimeException( 'Native refund accepted a reason beyond the API Unicode length bound.' );
+}
 $unscoped_gateway_refund = wc_create_refund( array( 'order_id' => $order->get_id(), 'amount' => '1.00', 'reason' => 'Direct gateway lacks fee decision', 'refund_payment' => true ) );
 if ( ! is_wp_error( $unscoped_gateway_refund ) || array() !== wc_get_order( $order->get_id() )->get_refunds() || '' !== wc_get_order( $order->get_id() )->get_meta( '_spacefast_refund_requests' ) ) {
 	throw new RuntimeException( 'A direct gateway refund bypassed the authenticated fee decision or retained temporary accounting.' );

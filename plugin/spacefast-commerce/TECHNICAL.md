@@ -53,3 +53,14 @@ The response includes native `refund_id`, `payment_refund_id`, `request_id`,
 HTTPS callback trust, a lost API response, native gateway accounting and verified
 webhook convergence. This boundary does not claim hosted checkout 3DS or live
 provider readiness.
+
+
+Native order details expose `can_refund`, `refundable_amount` and nullable
+`pending_refund`. The pending view includes only request ID, amount, plain-text
+reason, explicit fee decision and status; it never exposes the captured payment
+snapshot or credentials. Succeeded money awaiting native accounting remains
+pending. Completed/refused/failed/canceled commands do not block a new request.
+Refundability requires a paid undisputed order with remaining balance and a
+matching bound transaction. Pending retry remains available after a full refund.
+Automatic digital fulfillment may have no tracking number; the native view emits
+an empty number while preserving its ordinary fulfilled record.

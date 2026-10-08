@@ -93,9 +93,12 @@ final class Orders {
 		$records = \WC_Data_Store::load( 'order-fulfillment' )->read_fulfillments( \WC_Order::class, (string) $order->get_id() );
 		return new \WP_REST_Response( array( 'data' => array_merge( $this->summary( $order ), array(
 			'can_resend' => $order->is_paid() && ! PaymentOrders::delivery_suspended( $order ) && (bool) is_email( $order->get_billing_email() ),
+			'can_refund' => $order->is_paid() && ! PaymentOrders::delivery_suspended( $order ) && null === Refunds::pending( $order ) && $order->get_remaining_refund_amount() > 0 && '' !== $order->get_meta( '_spacefast_payment_intent' ) && $order->get_transaction_id() === $order->get_meta( '_spacefast_payment_intent' ),
+			'pending_refund' => Refunds::pending( $order ),
+			'refundable_amount' => wc_format_decimal( $order->get_remaining_refund_amount(), 2 ),
 			'can_ship' => $order->is_paid() && ! PaymentOrders::delivery_suspended( $order ) && array() !== $this->pending_shipping_items( $order, $records ),
 			'fulfillments' => array_map( static fn ( Fulfillment $record ): array => array(
-				'id' => $record->get_id(), 'status' => $record->get_status(), 'tracking_number' => $record->get_tracking_number(),
+				'id' => $record->get_id(), 'status' => $record->get_status(), 'tracking_number' => $record->get_tracking_number() ?? '',
 				'tracking_url' => esc_url_raw( $record->get_tracking_url(), array( 'https' ) ) ?: null,
 			), $records ),
 			'buyer_email' => $order->get_billing_email(),

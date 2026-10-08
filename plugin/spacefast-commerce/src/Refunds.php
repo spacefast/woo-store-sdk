@@ -16,6 +16,17 @@ final class Refunds {
 		} );
 	}
 
+	/** Merchant recovery reads the captured command, including succeeded money awaiting accounting. */
+	public static function pending( \WC_Order $order ): ?array {
+		$commands = $order->get_meta( '_spacefast_refund_requests' );
+		foreach ( is_array( $commands ) ? $commands : array() as $command ) {
+			if ( ! in_array( $command['status'], array( 'failed', 'canceled', 'refused' ), true ) && empty( $command['accounted'] ) ) {
+				return array_intersect_key( $command, array_flip( array( 'request_id', 'amount', 'reason', 'refund_application_fee', 'status' ) ) );
+			}
+		}
+		return null;
+	}
+
 	private function error( string $message, int $status = 409 ): \WP_Error {
 		return new \WP_Error( 'order_refund_unavailable', $message, array( 'status' => $status ) );
 	}
@@ -25,7 +36,7 @@ final class Refunds {
 		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'request_id', 'amount', 'reason', 'refund_application_fee' ) ) ||
 			! is_string( $input['request_id'] ?? null ) || ! wp_is_uuid( $input['request_id'] ) ||
 			! is_string( $input['amount'] ?? null ) || ! preg_match( '/^(?:0|[1-9][0-9]*)\.[0-9]{2}$/D', $input['amount'] ) || (float) $input['amount'] <= 0 ||
-			! is_bool( $input['refund_application_fee'] ?? null ) || ! is_string( $input['reason'] ?? null ) || mb_strlen( $input['reason'] ) > 500 ) {
+			! is_bool( $input['refund_application_fee'] ?? null ) || ! is_string( $input['reason'] ?? null ) || strlen( mb_convert_encoding( $input['reason'], 'UTF-16LE', 'UTF-8' ) ) > 1000 ) {
 			return $this->error( 'A refund request ID, positive amount, reason and explicit fee decision are required.', 422 );
 		}
 		$input['reason'] = sanitize_text_field( $input['reason'] );
