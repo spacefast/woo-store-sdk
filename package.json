@@ -7,6 +7,7 @@
     "build:shop": "pnpm --filter woo-store-shop build",
     "dev:shop": "pnpm --filter woo-store-shop dev",
     "test": "pnpm -r --filter './packages/**' test",
+    "test:e2e:commerce": "node e2e/commerce-e2e.mjs",
     "test:e2e:sdk": "node e2e/store-e2e.mjs",
     "test:e2e:shop": "node e2e/shop-e2e.mjs",
     "typecheck": "pnpm -r --filter './packages/**' typecheck",

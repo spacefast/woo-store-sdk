@@ -9,7 +9,7 @@ final class ManagedProducts {
 	private array $source_meta = array(
 		'_regular_price', '_sale_price', '_price', '_sale_price_dates_from', '_sale_price_dates_to',
 		'_virtual', '_downloadable', '_downloadable_files', '_download_limit', '_download_expiry',
-		'_sku', '_visibility', '_sold_individually', '_manage_stock', '_spacefast_product_key', '_spacefast_space_id',
+		'_spacefast_download_history', '_sku', '_visibility', '_sold_individually', '_manage_stock', '_spacefast_product_key', '_spacefast_space_id',
 	);
 
 	public function register(): void {

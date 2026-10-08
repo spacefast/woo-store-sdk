@@ -18,6 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once __DIR__ . '/src/Store.php';
 require_once __DIR__ . '/src/ManagedProducts.php';
+require_once __DIR__ . '/src/PrivateFiles.php';
 require_once __DIR__ . '/src/Catalog.php';
 
 add_action( 'before_woocommerce_init', static function (): void {
@@ -33,6 +34,8 @@ add_action( 'plugins_loaded', static function (): void {
 	$store = new \SpacefastCommerce\Store();
 	$managed = new \SpacefastCommerce\ManagedProducts();
 	$managed->register();
-	( new \SpacefastCommerce\Catalog( $store, $managed ) )->register();
+	$files = new \SpacefastCommerce\PrivateFiles( $store );
+	$files->register();
+	( new \SpacefastCommerce\Catalog( $store, $managed, $files ) )->register();
 	$store->register();
 }, 30 );
