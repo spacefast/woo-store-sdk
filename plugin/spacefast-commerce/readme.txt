@@ -131,7 +131,7 @@ The spacefast_connect gateway is registered for classic checkout and Checkout
 Block. It remains unavailable without installer-owned private constants
 SPACEFAST_COMMERCE_API_ORIGIN (HTTPS) and SPACEFAST_COMMERCE_API_CREDENTIAL.
 No platform Stripe key belongs in these constants. The API endpoint
-POST /v1/commerce/payments is still being implemented; configuring these
+POST /commerce/payments is still being implemented; configuring these
 constants alone does not establish readiness.
 
 Woo constructs the authenticated request from its own persisted order, with

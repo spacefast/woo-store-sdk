@@ -35,7 +35,7 @@ final class Gateway extends \WC_Payment_Gateway {
 			return array( 'result' => 'failure' );
 		}
 		// This body is constructed in Woo, never forwarded from browser payment data.
-		$response = wp_remote_post( rtrim( SPACEFAST_COMMERCE_API_ORIGIN, '/' ) . '/v1/commerce/payments', array(
+		$response = wp_remote_post( rtrim( SPACEFAST_COMMERCE_API_ORIGIN, '/' ) . '/commerce/payments', array(
 			'timeout' => 35, 'redirection' => 0,
 			'headers' => array(
 				'Authorization' => 'Bearer ' . SPACEFAST_COMMERCE_API_CREDENTIAL, 'Content-Type' => 'application/json',
