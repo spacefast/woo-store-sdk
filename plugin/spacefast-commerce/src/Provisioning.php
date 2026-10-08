@@ -42,6 +42,14 @@ final class Provisioning {
 		if ( is_wp_error( $pages ) ) {
 			\WP_CLI::error( $pages->get_error_message() );
 		}
+		$zone = new \WC_Shipping_Zone( 0 );
+		$included = false;
+		foreach ( $zone->get_shipping_methods( true ) as $method ) {
+			$included = $included || 'free_shipping' === $method->id;
+		}
+		if ( ! $included && ! $zone->add_shipping_method( 'free_shipping' ) ) {
+			\WP_CLI::error( 'Included shipping could not be prepared.' );
+		}
 		// Do not change the authoritative storage mode of existing native orders.
 		$receipt = $this->readiness();
 		echo 'SPACEFAST_COMMERCE_PREPARED ' . wp_json_encode( $receipt ) . PHP_EOL;

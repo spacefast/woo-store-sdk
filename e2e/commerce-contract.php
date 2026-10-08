@@ -69,7 +69,7 @@ commerce_check( true === $readiness->get_data()['data']['checkout_pages_ready'],
 commerce_check( 401 === commerce_request( 'GET', '/readiness', array() )->get_status(), 'Readiness leaked to an unauthenticated caller.' );
 $key = 'contract-' . strtolower( wp_generate_password( 8, false ) );
 $path = '/products/' . $key;
-$product_data = array( 'generation' => (int) get_option( 'spacefast_commerce_catalog_generation', 0 ) + 1, 'name' => 'Source product', 'description' => '<p>Source description</p>', 'price' => '12.50', 'enabled' => true, 'kind' => 'physical' );
+$product_data = array( 'generation' => (int) get_option( 'spacefast_commerce_catalog_generation', 0 ) + 1, 'name' => 'Source product', 'description' => '<p>Source description</p>', 'price' => '12.50', 'enabled' => true, 'kind' => 'physical', 'shipping' => array( 'included' => true, 'allowedCountries' => array( 'PL' ), 'policy' => 'Ships to Poland. Shipping is included.' ) );
 commerce_check( 401 === commerce_request( 'PUT', $path, array(), $product_data )->get_status(), 'Unauthenticated catalog write succeeded.' );
 $wrong_headers = array_merge( $headers, array( 'X-Spacefast-Environment' => 'live' ) );
 commerce_check( 403 === commerce_request( 'PUT', $path, $wrong_headers, $product_data )->get_status(), 'Cross-environment catalog write succeeded.' );
@@ -82,10 +82,33 @@ $read = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
 commerce_check( in_array( $id, array_column( $read, 'id' ), true ), 'Managed catalog cannot read its own products.' );
 $product = wc_get_product( $id );
 commerce_check( $product->is_sold_individually() && ! $product->is_virtual(), 'Simple physical product policy failed.' );
+commerce_check( $product_data['shipping'] === $response->get_data()['data']['shipping'] && 'USD' === $response->get_data()['data']['currency'], 'Catalog projection dropped merchant shipping or currency.' );
+wc_load_cart();
+WC()->cart->get_cart();
+WC()->cart->empty_cart();
+WC()->customer->set_shipping_country( 'PL' );
+commerce_check( false !== WC()->cart->add_to_cart( $id, 1 ), 'Managed physical product could not enter the native cart.' );
+WC()->cart->calculate_totals();
+$packages = WC()->shipping()->get_packages();
+commerce_check( isset( $packages[0]['rates']['spacefast_included'] ) && 0.0 === (float) WC()->cart->get_shipping_total(), 'Native cart did not apply included shipping: ' . wp_json_encode( array( 'needs' => WC()->cart->needs_shipping(), 'show' => WC()->cart->show_shipping(), 'destination' => WC()->cart->get_shipping_packages()[0]['destination'] ?? null, 'rates' => isset( $packages[0] ) ? array_keys( $packages[0]['rates'] ) : null ) ) );
+commerce_check( array( 'PL' ) === array_keys( WC()->countries->get_shipping_countries() ), 'Checkout exposed undeclared shipping destinations.' );
+$cart_controller = new \Automattic\WooCommerce\StoreApi\Utilities\CartController();
+$cart_controller->validate_cart();
+WC()->customer->set_shipping_country( 'DE' );
+WC()->cart->calculate_totals();
+commerce_check( array() === WC()->shipping()->get_packages()[0]['rates'], 'Undeclared destination received a shipping rate.' );
+$denied = false;
+try { $cart_controller->validate_cart(); } catch ( \Automattic\WooCommerce\StoreApi\Exceptions\InvalidCartException $error ) { $denied = true; }
+commerce_check( $denied, 'Store API accepted an undeclared shipping destination.' );
+$classic_errors = new WP_Error();
+do_action( 'woocommerce_after_checkout_validation', array( 'billing_country' => 'DE' ), $classic_errors );
+commerce_check( $classic_errors->has_errors(), 'Classic checkout accepted an undeclared shipping destination.' );
+WC()->cart->empty_cart();
 
 foreach ( array(
 	fn () => ( function () use ( $id ): void { $product = wc_get_product( $id ); $product->set_regular_price( '99' ); $product->save(); } )(),
 	fn () => update_post_meta( $id, '_price', '99' ),
+	fn () => update_post_meta( $id, '_spacefast_shipping', array( 'included' => true, 'allowedCountries' => array( 'DE' ) ) ),
 	fn () => wp_update_post( array( 'ID' => $id, 'post_title' => 'Browser edit' ) ),
 ) as $write ) {
 	$denied = false;
@@ -109,6 +132,13 @@ $order->add_product( wc_get_product( $id ), 1 );
 $order->calculate_totals();
 $order->save();
 $line = current( $order->get_items() );
+// A root SQL override bypasses hooks; the next source sync must observe and repair it.
+global $wpdb;
+$wpdb->update( $wpdb->postmeta, array( 'meta_value' => '99.00' ), array( 'post_id' => $id, 'meta_key' => '_regular_price' ) );
+clean_post_cache( $id );
+$drifted = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$drifted = current( array_filter( $drifted, static fn ( array $row ): bool => $row['id'] === $id ) );
+commerce_check( '99.00' === $drifted['price'], 'Catalog read concealed a root-managed price override.' );
 $product_data['generation']++;
 $product_data['name'] = 'New source name';
 $product_data['price'] = '15.00';
@@ -148,12 +178,16 @@ foreach ( $file_bodies as $filename => $bytes ) {
 $product_data['generation']++;
 $product_data['enabled'] = true;
 $product_data['kind'] = 'digital';
+$product_data['shipping'] = null;
 $product_data['downloads'] = array();
 commerce_check( 422 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Digital product accepted missing protected files.' );
 $product_data['downloads'] = array( $file_receipts[0] );
 $product_data['download_limit'] = 5;
 $product_data['download_expiry'] = 30;
 commerce_check( 200 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Download catalog apply failed.' );
+$projection = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$projection = current( array_filter( $projection, static fn ( array $row ): bool => $row['id'] === $id ) );
+commerce_check( array( $file_receipts[0] ) === $projection['downloads'] && 5 === $projection['download_limit'] && 30 === $projection['download_expiry'] && null === $projection['shipping'], 'Source sync cannot observe protected file declarations and download policy.' );
 $digital_order = wc_create_order();
 $buyer_email = 'buyer-' . $key . '@example.test';
 $digital_order->set_billing_email( $buyer_email );
@@ -188,6 +222,11 @@ commerce_check( $digital_order->is_paid() && $payment_result['intent_id'] === $d
 $original_downloads = $digital_order->get_downloadable_items();
 commerce_check( 1 === count( $original_downloads ), 'Woo did not grant the paid file.' );
 $original_download = current( $original_downloads );
+$wpdb->update( $wpdb->postmeta, array( 'meta_value' => maybe_serialize( array( 'root_override' => array( 'name' => 'Public drift', 'file' => 'https://untrusted.example/private.pdf' ) ) ) ), array( 'post_id' => $id, 'meta_key' => '_downloadable_files' ) );
+clean_post_cache( $id );
+$drifted = commerce_request( 'GET', '/products', $headers )->get_data()['data'];
+$drifted = current( array_filter( $drifted, static fn ( array $row ): bool => $row['id'] === $id ) );
+commerce_check( null === $drifted['downloads'] && ! str_contains( wp_json_encode( $drifted ), 'untrusted.example' ), 'Unsafe download drift leaked a backing URL instead of a repair signal.' );
 $product_data['generation']++;
 $product_data['downloads'] = array( $file_receipts[1] );
 commerce_check( 200 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Download replacement failed.' );
@@ -212,8 +251,16 @@ $new_downloads = $new_order->get_downloadable_items();
 commerce_check( 1 === count( $new_downloads ) && current( $new_downloads )['download_id'] !== $original_download['download_id'], 'New purchase received historical files.' );
 commerce_check( $file_bodies['replacement.pdf'] === file_get_contents( current( $new_downloads )['file']['file'] ), 'New purchase received the wrong bytes.' );
 $product_data['generation']++;
-$product_data['enabled'] = false;
-commerce_check( 200 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'Digital archive failed.' );
+commerce_check( 200 === commerce_request( 'PUT', $path, $headers, array( 'generation' => $product_data['generation'], 'action' => 'archive' ) )->get_status(), 'Digital archive failed.' );
+$retired = new WP_REST_Request( 'GET', '/spacefast-commerce/v1/products' );
+$retired->set_headers( $headers );
+$retired->set_param( 'keys', array( $key ) );
+$retired = rest_do_request( $retired )->get_data()['data'];
+$retired = current( array_filter( $retired, static fn ( array $row ): bool => $row['id'] === $id ) );
+commerce_check( false === $retired['enabled'] && array( $file_receipts[1] ) === $retired['downloads'], 'Desired-key read lost retained native archive state.' );
+$fence = array( 'generation' => $product_data['generation'] + 1 );
+commerce_check( 200 === commerce_request( 'PUT', '/catalog/fence', $headers, $fence )->get_status(), 'Empty-catalog generation was not fenced.' );
+commerce_check( 409 === commerce_request( 'PUT', $path, $headers, $product_data )->get_status(), 'An older apply reopened an archived product after an empty-catalog fence.' );
 // The HTTP runner uses these native URLs to prove the actual handler, not just metadata.
 file_put_contents( '/tmp/commerce-download-contract.json', wp_json_encode( array(
 	'original_url' => $original_download['download_url'],
@@ -227,4 +274,4 @@ file_put_contents( '/tmp/commerce-download-contract.json', wp_json_encode( array
 $rotated = array_merge( $binding, array( 'credential' => bin2hex( random_bytes( 32 ) ) ) );
 commerce_check( true === $store->bind( $rotated ), 'Credential rotation failed.' );
 commerce_check( 401 === commerce_request( 'GET', '/products', $headers )->get_status(), 'Revoked credential still works.' );
-echo "PASS: bound store authentication, catalog retry/fencing, managed writes, native counters, order history, archive, receipt policy, credential rotation, private ingestion, native grants, file replacement and trusted payment completion/retry\n";
+echo "PASS: native source drift/repair, included shipping/destinations, empty-catalog fence, managed guards, protected ingestion, historical grants, native orders and trusted payment retry\n";

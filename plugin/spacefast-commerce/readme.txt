@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.1
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: GPLv2 or later
 
 Managed commerce for one Space and environment per WordPress installation.
@@ -31,6 +31,11 @@ credential revokes the previous one. Remove the provisioning file after use.
 == Deploy-owned catalog ==
 
 GET /wp-json/spacefast-commerce/v1/products reads the managed projection.
+It includes active products and retired products explicitly requested with
+keys[]=<desired-key>, with at most 100 desired keys. Retired history is not
+scanned on every deploy. Reads include source-owned fields and private file
+content identities, not backing paths. Invalid download drift is reported as
+downloads=null so the pipeline can repair or report it.
 PUT /wp-json/spacefast-commerce/v1/products/{key} applies one pipeline-selected
 product. Headers: Authorization: Bearer <credential>, X-Spacefast-Space-Id,
 X-Spacefast-Store-Id and X-Spacefast-Environment. The pipeline computes the diff
@@ -39,10 +44,21 @@ and sequences writes; the plugin does not discover source or reconcile it.
 Product body: generation (positive monotonic deployment integer), name,
 description, price (decimal string), enabled (boolean), kind (digital/physical),
 downloads (list of sha256/filename declarations), download_limit and
-download_expiry (days). Omitted limits are unlimited and have no expiry.
+download_expiry (days). Physical products require shipping: included=true,
+allowedCountries (distinct supported country codes), and policy. Digital
+products have shipping=null. Omitted limits are unlimited and have no expiry.
 The generation is stable across operation retries. An older generation cannot
 apply after a newer one starts. A source removal uses enabled=false and retains
 native Woo order history. No product deletion endpoint is supplied.
+Removal sends {generation, action:"archive"} to the product path; it preserves
+existing files, grants and order history. The pipeline first sends {generation}
+to PUT /catalog/fence, including for empty or unchanged catalogs, to retire
+older in-flight writes. The generation belongs to the durable source intent.
+
+Bound checkout accepts one managed product with quantity one. Physical source
+destinations constrain the native checkout country list, Store API and classic
+validation. A native free-shipping method is prepared once; eligible packages
+receive included shipping, and source generations invalidate cached rates.
 
 Normal Woo UI, REST and CRUD writes cannot change source-managed fields.
 Transactional writes such as native sales counters remain permitted. Root

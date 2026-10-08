@@ -159,6 +159,36 @@ final class PrivateFiles {
 		return $download;
 	}
 
+	/** Source sync receives content identities, never private backing paths. Null reports drift. */
+	public function declarations( \WC_Product $product ): ?array {
+		$downloads = $product->get_downloads();
+		if ( array() === $downloads ) {
+			return array();
+		}
+		$root = $this->root();
+		if ( is_wp_error( $root ) ) {
+			return null;
+		}
+		$result = array();
+		foreach ( $downloads as $id => $file ) {
+			$path = $file->get_file();
+			$filename = basename( $path );
+			$sha = basename( dirname( $path ) );
+			if ( ! preg_match( '/^[a-f0-9]{64}$/D', $sha ) ||
+				is_wp_error( $this->filename( $filename ) ) || $path !== $root . '/' . $sha . '/' . $filename ||
+				is_link( dirname( $path ) ) || is_link( $path ) || ! is_file( $path ) ||
+				$id !== substr( hash( 'sha256', $sha . ':' . $filename ), 0, 32 ) || $file->get_name() !== $filename ) {
+				return null;
+			}
+			$digest = hash_file( 'sha256', $path );
+			if ( ! is_string( $digest ) || ! hash_equals( $sha, $digest ) ) {
+				return null;
+			}
+			$result[] = array( 'sha256' => $sha, 'filename' => $filename );
+		}
+		return $result;
+	}
+
 	public function historical_path( string $path, \WC_Product $product, string $id ): string {
 		$file = $this->historical_file( false, $product, $id );
 		return $file ? $file->get_file() : $path;
