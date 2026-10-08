@@ -24,5 +24,7 @@ if ( is_wp_error( $snapshot ) ) {
 echo 'COMMERCE_ORDER_JSON ' . wp_json_encode( array(
 	'payment' => $snapshot,
 	'transaction_id' => $order->get_transaction_id(),
+	'refunded_total' => wc_format_decimal( $order->get_total_refunded(), 2 ),
+	'refund_count' => count( $order->get_refunds() ),
 	'download_urls' => array_values( array_column( $order->get_downloadable_items(), 'download_url' ) ),
 ) ) . "\n";

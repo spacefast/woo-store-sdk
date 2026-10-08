@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const fixture = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 if (process.argv[3] === 'refunded') {
   const response = await fetch(fixture.original_url, { redirect: 'manual' });
-  assert.equal(response.status, 404, 'Woo retained a fully refunded grant');
+  assert.equal(response.status, 403, 'Woo delivered a fully refunded order through its retained grant');
   const body = new Uint8Array(await response.arrayBuffer());
   assert.notEqual(createHash('sha256').update(body).digest('hex'), fixture.original_sha256);
   console.log('PASS: native HTTP download denies the fully refunded order');

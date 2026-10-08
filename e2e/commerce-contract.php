@@ -303,7 +303,19 @@ $new_snapshot = commerce_request( 'GET', $new_payment_path, $headers )->get_data
 commerce_check( '' === $new_snapshot['intent_id'], 'Lost-response fixture already had a bound intent.' );
 $new_result = array( 'action' => 'paid', 'attempt_id' => $new_snapshot['attempt_id'],
 	'intent_id' => 'pi_contract' . $new_order->get_id(), 'total' => $new_snapshot['total'], 'currency' => $new_snapshot['currency'] );
-commerce_check( 200 === commerce_request( 'PUT', $new_payment_path, $headers, $new_result )->get_status(), 'Verified paid result did not recover a lost setup response.' );
+// A deploy can remove current product ownership before an already acquired payment settles.
+$managed_key = get_post_meta( $id, '_spacefast_product_key', true );
+$wpdb->delete( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => '_spacefast_product_key' ) );
+clean_post_cache( $id );
+try {
+	commerce_check( 409 === commerce_request( 'GET', $new_payment_path, $headers )->get_status(), 'New acquisition accepted a product outside the current managed catalog.' );
+	commerce_check( 409 === commerce_request( 'PUT', $new_payment_path, $headers, array_merge( $new_result, array( 'action' => 'bind_intent' ) ) )->get_status(), 'Intent acquisition accepted a product outside the current managed catalog.' );
+	commerce_check( 200 === commerce_request( 'PUT', $new_payment_path, $headers, $new_result )->get_status(), 'Verified paid result depended on the current catalog after a lost setup response.' );
+	commerce_check( 200 === commerce_request( 'GET', $new_payment_path, $headers )->get_status(), 'Paid native history depended on the current catalog.' );
+} finally {
+	$wpdb->insert( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => '_spacefast_product_key', 'meta_value' => $managed_key ) );
+	clean_post_cache( $id );
+}
 $new_order = wc_get_order( $new_order->get_id() );
 $new_downloads = $new_order->get_downloadable_items();
 commerce_check( 1 === count( $new_downloads ) && current( $new_downloads )['download_id'] !== $original_download['download_id'], 'New purchase received historical files.' );
