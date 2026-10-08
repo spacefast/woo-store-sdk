@@ -20,6 +20,7 @@ require_once __DIR__ . '/src/Store.php';
 require_once __DIR__ . '/src/ManagedProducts.php';
 require_once __DIR__ . '/src/PrivateFiles.php';
 require_once __DIR__ . '/src/Catalog.php';
+require_once __DIR__ . '/src/Provisioning.php';
 
 add_action( 'before_woocommerce_init', static function (): void {
 	if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
@@ -36,6 +37,7 @@ add_action( 'plugins_loaded', static function (): void {
 	$managed->register();
 	$files = new \SpacefastCommerce\PrivateFiles( $store );
 	$files->register();
+	( new \SpacefastCommerce\Provisioning( $store, $files ) )->register();
 	( new \SpacefastCommerce\Catalog( $store, $managed, $files ) )->register();
 	$store->register();
 }, 30 );

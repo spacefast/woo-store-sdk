@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -62,6 +62,16 @@ try {
   }
   wp('plugin', 'install', '/tmp/woocommerce.zip', '--activate', '--force');
   wp('plugin', 'activate', 'woo-storefront', 'spacefast-commerce');
+  const binding = path.join(directory, 'store.json');
+  writeFileSync(binding, JSON.stringify({ space_id: 'spc_contract', store_id: 'contract', environment: 'test',
+    origin: 'https://contract.example.test', currency: 'USD', country: 'PL', credential: randomBytes(32).toString('hex') }), { mode: 0o600 });
+  docker('cp', binding, `${container}:/tmp/commerce-store.json`);
+  docker('exec', container, 'chown', 'www-data:www-data', '/tmp/commerce-store.json');
+  try {
+    wp('spacefast-commerce', 'prepare', '/tmp/commerce-store.json');
+  } finally {
+    docker('exec', container, 'rm', '-f', '/tmp/commerce-store.json');
+  }
   wp('rewrite', 'structure', '/%postname%/');
   wp('rewrite', 'flush', '--hard');
   docker('cp', 'e2e/fixtures/commerce-mail.php', `${container}:/var/www/html/wp-content/mu-plugins/commerce-test-mail.php`);

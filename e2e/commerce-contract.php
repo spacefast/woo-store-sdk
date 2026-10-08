@@ -18,6 +18,16 @@ commerce_check( is_wp_error( $store->bind( array_merge( $binding, array( 'enviro
 commerce_check( 'force' === get_option( 'woocommerce_file_download_method' ), 'Woo download transport is not protected.' );
 commerce_check( false === apply_filters( 'woo_storefront_checkout_redirect_after_order', true ), 'Managed checkout skips Woo receipt.' );
 commerce_check( $binding['origin'] === apply_filters( 'woo_storefront_checkout_return_url', 'https://untrusted.example' ), 'Return target is caller-controlled.' );
+$native_storage_mode = get_option( 'woocommerce_custom_orders_table_enabled' );
+$binding_file = tempnam( sys_get_temp_dir(), 'commerce-binding-' );
+file_put_contents( $binding_file, wp_json_encode( $binding ) );
+try {
+	WP_CLI::runcommand( 'spacefast-commerce prepare ' . escapeshellarg( $binding_file ) );
+	WP_CLI::runcommand( 'spacefast-commerce prepare ' . escapeshellarg( $binding_file ) );
+} finally {
+	unlink( $binding_file );
+}
+commerce_check( $native_storage_mode === get_option( 'woocommerce_custom_orders_table_enabled' ), 'Provisioning changed native order storage authority.' );
 
 $headers = array(
 	'Authorization' => 'Bearer ' . $credential,
@@ -34,6 +44,9 @@ function commerce_request( string $method, string $path, array $headers, ?array 
 	}
 	return rest_do_request( $request );
 }
+$readiness = commerce_request( 'GET', '/readiness', $headers );
+commerce_check( 200 === $readiness->get_status() && true === $readiness->get_data()['data']['catalog_ready'], 'Prepared native schemas and private storage are not ready.' );
+commerce_check( 401 === commerce_request( 'GET', '/readiness', array() )->get_status(), 'Readiness leaked to an unauthenticated caller.' );
 $key = 'contract-' . strtolower( wp_generate_password( 8, false ) );
 $path = '/products/' . $key;
 $product_data = array( 'generation' => (int) get_option( 'spacefast_commerce_catalog_generation', 0 ) + 1, 'name' => 'Source product', 'description' => '<p>Source description</p>', 'price' => '12.50', 'enabled' => true, 'kind' => 'physical' );

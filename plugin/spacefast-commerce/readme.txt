@@ -105,3 +105,16 @@ node e2e/commerce-http-contract.mjs /path/to/commerce-download-contract.json
 The disposable mail fixture uses e2e/fixtures/commerce-mail.php and Mailpit on
 COMMERCE_MAILPIT_URL (default http://127.0.0.1:28982). Never install that fixture
 on a merchant site.
+
+== Native setup ==
+
+The root installer runs wp spacefast-commerce prepare /private/path/store.json.
+This validates the bound identity, runs Woo’s native synchronous database update
+command and creates missing HPOS tables through Woo’s own synchronizer. Retries
+preserve the existing authoritative order storage mode. The installer deletes
+the private binding file afterward. No buyer request performs this setup.
+
+GET /wp-json/spacefast-commerce/v1/readiness requires the same bound credential
+and reports native schema/private-storage inventory. catalog_ready covers only
+that inventory. The platform must separately prove public routes, mail, cron
+execution and payment connectivity before declaring the store ready.
