@@ -17,7 +17,15 @@ if ( 'create' === ( $args[0] ?? '' ) ) {
 if ( ! $order ) {
 	throw new RuntimeException( 'Relay order was not found.' );
 }
-$snapshot = ( new \SpacefastCommerce\PaymentOrders( new \SpacefastCommerce\Store() ) )->for_gateway( $order->get_id() );
+$payments = new \SpacefastCommerce\PaymentOrders( new \SpacefastCommerce\Store() );
+if ( 'create' === $args[0] ) {
+	$snapshot = $payments->for_gateway( $order->get_id() );
+} else {
+	$request = new WP_REST_Request( 'GET' );
+	$request->set_param( 'id', $order->get_id() );
+	$response = $payments->snapshot( $request );
+	$snapshot = is_wp_error( $response ) ? $response : $response->get_data()['data'];
+}
 if ( is_wp_error( $snapshot ) ) {
 	throw new RuntimeException( $snapshot->get_error_code() );
 }

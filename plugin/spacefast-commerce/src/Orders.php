@@ -92,8 +92,8 @@ final class Orders {
 		}
 		$records = \WC_Data_Store::load( 'order-fulfillment' )->read_fulfillments( \WC_Order::class, (string) $order->get_id() );
 		return new \WP_REST_Response( array( 'data' => array_merge( $this->summary( $order ), array(
-			'can_resend' => $order->is_paid() && (bool) is_email( $order->get_billing_email() ),
-			'can_ship' => $order->is_paid() && array() !== $this->pending_shipping_items( $order, $records ),
+			'can_resend' => $order->is_paid() && ! PaymentOrders::delivery_suspended( $order ) && (bool) is_email( $order->get_billing_email() ),
+			'can_ship' => $order->is_paid() && ! PaymentOrders::delivery_suspended( $order ) && array() !== $this->pending_shipping_items( $order, $records ),
 			'fulfillments' => array_map( static fn ( Fulfillment $record ): array => array(
 				'id' => $record->get_id(), 'status' => $record->get_status(), 'tracking_number' => $record->get_tracking_number(),
 				'tracking_url' => esc_url_raw( $record->get_tracking_url(), array( 'https' ) ) ?: null,
@@ -110,8 +110,8 @@ final class Orders {
 		if ( is_wp_error( $order ) ) {
 			return $order;
 		}
-		if ( ! $order->is_paid() || ! is_email( $order->get_billing_email() ) ) {
-			return new \WP_Error( 'order_delivery_unavailable', 'A paid order with a buyer email is required.', array( 'status' => 409 ) );
+		if ( ! $order->is_paid() || PaymentOrders::delivery_suspended( $order ) || ! is_email( $order->get_billing_email() ) ) {
+			return new \WP_Error( 'order_delivery_unavailable', 'A paid, undisputed order with a buyer email is required.', array( 'status' => 409 ) );
 		}
 		$email = WC()->mailer()->get_emails()['WC_Email_Customer_Invoice'];
 		$sent = false;
@@ -166,8 +166,8 @@ final class Orders {
 					return $this->shipment_receipt( $order, $record );
 				}
 			}
-			if ( ! $order->is_paid() ) {
-				return new \WP_Error( 'order_not_paid', 'Only a paid native order can be shipped.', array( 'status' => 409 ) );
+			if ( ! $order->is_paid() || PaymentOrders::delivery_suspended( $order ) ) {
+				return new \WP_Error( 'order_not_paid', 'Only a paid, undisputed native order can be shipped.', array( 'status' => 409 ) );
 			}
 			$items = $this->pending_shipping_items( $order, $records );
 			if ( array() === $items ) {

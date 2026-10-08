@@ -5,14 +5,23 @@ namespace SpacefastCommerce;
 
 /** Trusted native order snapshots and verified-result application, never a buyer payment API. */
 final class PaymentOrders {
+	private bool $applying_dispute = false;
+	private bool $restoring_dispute = false;
 	public function __construct( private Store $store ) {}
 
 	public function register(): void {
 		add_action( 'woocommerce_before_order_object_save', array( $this, 'bind_order' ) );
+		add_filter( 'woocommerce_order_is_download_permitted', static fn ( bool $permitted, \WC_Order $order ): bool => $permitted && ! self::delivery_suspended( $order ), 10, 2 );
+		foreach ( array( 'customer_completed_order', 'customer_processing_order', 'new_order' ) as $email ) {
+			add_filter( 'woocommerce_email_enabled_' . $email, fn ( bool $enabled ): bool => $enabled && ! $this->restoring_dispute );
+		}
 		add_action( 'rest_api_init', function (): void {
 			register_rest_route( 'spacefast-commerce/v1', '/orders/(?P<id>[1-9][0-9]*)/payment', array(
 				array( 'methods' => 'GET', 'permission_callback' => array( $this->store, 'authorize' ), 'callback' => array( $this, 'snapshot' ) ),
 				array( 'methods' => 'PUT', 'permission_callback' => array( $this->store, 'authorize' ), 'callback' => array( $this, 'apply' ) ),
+			) );
+			register_rest_route( 'spacefast-commerce/v1', '/orders/(?P<id>[1-9][0-9]*)/payment/disputes', array(
+				'methods' => 'PUT', 'permission_callback' => array( $this->store, 'authorize' ), 'callback' => array( $this, 'apply_disputes' ),
 			) );
 			register_rest_route( 'spacefast-commerce/v1', '/orders/(?P<id>[1-9][0-9]*)/payment/refunds', array(
 				'methods' => 'PUT', 'permission_callback' => array( $this->store, 'authorize' ), 'callback' => array( $this, 'apply_refunds' ),
@@ -33,6 +42,10 @@ final class PaymentOrders {
 				throw new \WC_Data_Exception( 'payment_order_scope_conflict', 'The payment order belongs to another store or environment.' );
 			}
 			$order->update_meta_data( $key, $binding[$field] );
+		}
+		if ( ! $this->applying_dispute && isset( $order->get_changes()['status'] ) && '' !== $order->get_meta( '_spacefast_dispute_restore_status' ) ) {
+			// A native refund or operator status change takes precedence over automatic restoration.
+			$order->delete_meta_data( '_spacefast_dispute_restore_status' );
 		}
 		if ( '' === $order->get_meta( '_spacefast_payment_attempt' ) ) {
 			$order->update_meta_data( '_spacefast_payment_attempt', wp_generate_uuid4() );
@@ -75,6 +88,9 @@ final class PaymentOrders {
 	/** The gateway reads the same trusted native snapshot without an HTTP loopback. */
 	public function for_gateway( int $id ): array|\WP_Error {
 		$order = $this->order( $id, true );
+		if ( ! is_wp_error( $order ) && self::delivery_suspended( $order ) ) {
+			return new \WP_Error( 'payment_order_closed', 'This disputed native order cannot acquire another payment.', array( 'status' => 409 ) );
+		}
 		return is_wp_error( $order ) ? $order : $this->receipt( $order );
 	}
 
@@ -119,7 +135,7 @@ final class PaymentOrders {
 			if ( '' !== $intent && $intent !== $input['intent_id'] ) {
 				return new \WP_Error( 'payment_intent_conflict', 'Another payment intent is bound to this order.', array( 'status' => 409 ) );
 			}
-			if ( ( 'bind_intent' === $input['action'] && ! $order->needs_payment() ) ||
+			if ( self::delivery_suspended( $order ) || ( 'bind_intent' === $input['action'] && ! $order->needs_payment() ) ||
 				( 'paid' === $input['action'] && ( ( $order->is_paid() && $order->get_transaction_id() !== $intent ) ||
 					( ! $order->is_paid() && ! $order->needs_payment() ) ) ) ) {
 				return new \WP_Error( 'payment_order_closed', 'This native order no longer accepts this payment result.', array( 'status' => 409 ) );
@@ -193,7 +209,7 @@ final class PaymentOrders {
 			}
 			$amount = array_sum( array_map( static fn ( string $value ): float => wc_add_number_precision( (float) $value ), $pending ) );
 			$remaining = wc_add_number_precision( (float) $order->get_remaining_refund_amount() );
-			if ( $amount > $remaining || ( $amount > 0 && ! $order->is_paid() && $amount < $remaining ) ) {
+			if ( $amount > $remaining || ( $amount > 0 && ! $order->is_paid() && ! self::delivery_suspended( $order ) && $amount < $remaining ) ) {
 				return new \WP_Error( 'payment_refund_conflict', 'Verified refunds do not match the native refundable payment state.', array( 'status' => 409 ) );
 			}
 			if ( '' === $receipt['intent_id'] && $amount > 0 ) {
@@ -228,9 +244,99 @@ final class PaymentOrders {
 			}
 			return new \WP_REST_Response( array( 'data' => array_merge( $this->receipt( $order ), array(
 				'refunded_total' => wc_format_decimal( $order->get_total_refunded(), 2 ),
+				'suspended' => self::delivery_suspended( $order ),
 				'refunds' => array_map( static fn ( string $id, string $amount ): array => array( 'id' => $id, 'amount' => $amount ), array_keys( $refunds ), array_values( $refunds ) ),
 			) ) ) );
 		} finally {
+			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
+		}
+	}
+
+	/** Native permission and merchant actions remain denied even after an operator status override. */
+	public static function delivery_suspended( \WC_Order $order ): bool {
+		$states = $order->get_meta( '_spacefast_payment_disputes' );
+		return is_array( $states ) && array() !== array_diff( array_values( $states ), array( 'won', 'warning_closed', 'prevented' ) );
+	}
+
+	/** Apply current API-verified dispute outcomes without renewing grants or completing payment. */
+	public function apply_disputes( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$input = $request->get_json_params();
+		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'attempt_id', 'intent_id', 'total', 'currency', 'disputes' ) ) ||
+			! is_string( $input['intent_id'] ?? null ) || ! preg_match( '/^pi_[A-Za-z0-9]+$/D', $input['intent_id'] ) ||
+			! is_array( $input['disputes'] ?? null ) || ! array_is_list( $input['disputes'] ) || count( $input['disputes'] ) > 100 ) {
+			return new \WP_Error( 'payment_disputes_invalid', 'Verified payment disputes are required.', array( 'status' => 422 ) );
+		}
+		$states = array();
+		foreach ( $input['disputes'] as $dispute ) {
+			if ( ! is_array( $dispute ) || array_diff( array_keys( $dispute ), array( 'id', 'status' ) ) ||
+				! is_string( $dispute['id'] ?? null ) || ! preg_match( '/^(?:dp|du)_[A-Za-z0-9]+$/D', $dispute['id'] ) || isset( $states[$dispute['id']] ) ||
+				! in_array( $dispute['status'] ?? null, array( 'needs_response', 'under_review', 'warning_needs_response', 'warning_under_review', 'won', 'lost', 'warning_closed', 'prevented' ), true ) ) {
+				return new \WP_Error( 'payment_disputes_invalid', 'Each verified dispute needs a unique provider ID and current status.', array( 'status' => 422 ) );
+			}
+			$states[$dispute['id']] = $dispute['status'];
+		}
+		global $wpdb;
+		$lock = 'sf_pay_' . substr( hash( 'sha256', $this->store->binding()['store_id'] . ':' . $request['id'] ), 0, 48 );
+		if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 5)', $lock ) ) ) {
+			return new \WP_Error( 'payment_order_busy', 'Payment order is busy. Retry the same result.', array( 'status' => 409 ) );
+		}
+		try {
+			$order = $this->order( (int) $request['id'] );
+			if ( is_wp_error( $order ) ) {
+				return $order;
+			}
+			$receipt = $this->receipt( $order );
+			foreach ( array( 'attempt_id', 'total', 'currency' ) as $field ) {
+				if ( ( $input[$field] ?? null ) !== $receipt[$field] ) {
+					return new \WP_Error( 'payment_result_conflict', 'Dispute result does not match the captured native order.', array( 'status' => 409 ) );
+				}
+			}
+			if ( ( '' !== $receipt['intent_id'] && $receipt['intent_id'] !== $input['intent_id'] ) ||
+				( '' !== $order->get_transaction_id() && $order->get_transaction_id() !== $input['intent_id'] ) ) {
+				return new \WP_Error( 'payment_intent_conflict', 'Dispute result does not match the bound payment intent.', array( 'status' => 409 ) );
+			}
+			$previous = $order->get_meta( '_spacefast_payment_disputes' );
+			$previous = is_array( $previous ) ? $previous : array();
+			foreach ( $states as $id => $status ) {
+				if ( isset( $previous[$id] ) && in_array( $previous[$id], array( 'won', 'lost', 'prevented' ), true ) && $previous[$id] !== $status ) {
+					return new \WP_Error( 'payment_dispute_conflict', 'A closed dispute cannot accept an older or different outcome.', array( 'status' => 409 ) );
+				}
+			}
+			$was_suspended = self::delivery_suspended( $order );
+			$merged = array_merge( $previous, $states );
+			if ( count( $merged ) > 100 ) {
+				return new \WP_Error( 'payment_dispute_conflict', 'The native dispute history needs operator reconciliation.', array( 'status' => 409 ) );
+			}
+			$this->applying_dispute = true;
+			$order->update_meta_data( '_spacefast_payment_disputes', $merged );
+			$suspended = self::delivery_suspended( $order );
+			if ( $suspended && ! $was_suspended && $order->has_status( array( 'pending', 'failed', 'processing', 'completed' ) ) ) {
+				$order->update_meta_data( '_spacefast_dispute_restore_status', $order->get_status() );
+			}
+			if ( '' === $receipt['intent_id'] && array() !== $states ) {
+				$order->update_meta_data( '_spacefast_payment_intent', $input['intent_id'] );
+				$order->update_meta_data( '_spacefast_payment_total', $receipt['total'] );
+				$order->update_meta_data( '_spacefast_payment_currency', $receipt['currency'] );
+			}
+			$order->save();
+			$restore = $order->get_meta( '_spacefast_dispute_restore_status' );
+			if ( $suspended && '' !== $restore && ! $order->has_status( 'on-hold' ) && $order->has_status( $restore ) ) {
+				$order->update_status( 'on-hold' );
+			} elseif ( ! $suspended && '' !== $restore ) {
+				if ( $order->has_status( 'on-hold' ) && $order->get_remaining_refund_amount() > 0 ) {
+					$this->restoring_dispute = true;
+					$order->update_status( $restore );
+				}
+				$order->delete_meta_data( '_spacefast_dispute_restore_status' );
+				$order->save();
+			}
+			return new \WP_REST_Response( array( 'data' => array_merge( $this->receipt( $order ), array(
+				'suspended' => $suspended,
+				'disputes' => array_map( static fn ( string $id, string $status ): array => array( 'id' => $id, 'status' => $status ), array_keys( $merged ), array_values( $merged ) ),
+			) ) ) );
+		} finally {
+			$this->applying_dispute = false;
+			$this->restoring_dispute = false;
 			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
 		}
 	}
