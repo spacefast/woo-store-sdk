@@ -94,6 +94,12 @@ final class PaymentOrders {
 		return is_wp_error( $order ) ? $order : $this->receipt( $order );
 	}
 
+	/** Refund recovery uses the purchased order, independent of today's acquisition catalog. */
+	public function for_refund( int $id ): array|\WP_Error {
+		$order = $this->order( $id );
+		return is_wp_error( $order ) ? $order : $this->receipt( $order );
+	}
+
 	private function receipt( \WC_Order $order ): array {
 		return array(
 			'order_id' => $order->get_id(),

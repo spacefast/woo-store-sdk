@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Spacefast Commerce
  * Description: Source-managed WooCommerce stores and the Spacefast payment boundary.
- * Version: 0.1.9
+ * Version: 0.1.10
  * Requires at least: 7.0
  * Requires PHP: 8.1
  * Requires Plugins: woocommerce, woo-storefront
@@ -24,6 +24,7 @@ require_once __DIR__ . '/src/Catalog.php';
 require_once __DIR__ . '/src/Provisioning.php';
 require_once __DIR__ . '/src/PaymentOrders.php';
 require_once __DIR__ . '/src/Orders.php';
+require_once __DIR__ . '/src/Refunds.php';
 
 add_action( 'before_woocommerce_init', static function (): void {
 	if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
@@ -56,6 +57,7 @@ add_action( 'plugins_loaded', static function (): void {
 	( new \SpacefastCommerce\Provisioning( $store, $files ) )->register();
 	( new \SpacefastCommerce\PaymentOrders( $store ) )->register();
 	( new \SpacefastCommerce\Orders( $store ) )->register();
+	( new \SpacefastCommerce\Refunds( $store ) )->register();
 	( new \SpacefastCommerce\Catalog( $store, $managed, $files ) )->register();
 	$store->register();
 }, 30 );

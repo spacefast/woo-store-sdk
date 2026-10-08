@@ -12,7 +12,7 @@ final class Gateway extends \WC_Payment_Gateway {
 		$this->title = 'Card';
 		$this->description = 'Pay securely with Stripe.';
 		$this->has_fields = false;
-		$this->supports = array( 'products' );
+		$this->supports = array( 'products', 'refunds' );
 		$this->enabled = 'yes';
 		add_action( 'woocommerce_receipt_' . $this->id, array( $this, 'receipt_page' ) );
 	}
@@ -23,6 +23,10 @@ final class Gateway extends \WC_Payment_Gateway {
 			is_string( SPACEFAST_COMMERCE_API_ORIGIN ) && is_string( SPACEFAST_COMMERCE_API_CREDENTIAL ) &&
 			boolval( preg_match( '/^[A-Za-z0-9_-]{32,256}$/D', SPACEFAST_COMMERCE_API_CREDENTIAL ) ) &&
 			'https' === wp_parse_url( SPACEFAST_COMMERCE_API_ORIGIN, PHP_URL_SCHEME );
+	}
+
+	public function process_refund( $order_id, $amount = null, $reason = '' ) {
+		return ( new Refunds( new Store() ) )->gateway_result( (int) $order_id, $amount, $reason );
 	}
 
 	public function process_payment( $order_id ): array {

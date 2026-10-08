@@ -31,6 +31,22 @@ $apply_disputes = static function ( array $disputes, bool $authenticated = true 
 	$request->set_body( wp_json_encode( array_merge( $identity, array( 'disputes' => $disputes ) ) ) );
 	return rest_do_request( $request );
 };
+// A merchant financial action requires authentication and an explicit fee policy.
+$merchant_refund = new WP_REST_Request( 'POST', '/spacefast-commerce/v1/orders/' . $order->get_id() . '/refund' );
+$merchant_refund->set_header( 'Content-Type', 'application/json' );
+$merchant_refund->set_body( wp_json_encode( array( 'request_id' => wp_generate_uuid4(), 'amount' => '1.00', 'reason' => 'Native action contract' ) ) );
+if ( 401 !== rest_do_request( $merchant_refund )->get_status() ) {
+	throw new RuntimeException( 'An unauthenticated merchant refund reached the financial action.' );
+}
+$merchant_refund->set_headers( array( 'Authorization' => 'Bearer ' . $credential, 'X-Spacefast-Space-Id' => $binding['space_id'],
+	'X-Spacefast-Store-Id' => $binding['store_id'], 'X-Spacefast-Environment' => $binding['environment'] ) );
+if ( 422 !== rest_do_request( $merchant_refund )->get_status() ) {
+	throw new RuntimeException( 'The merchant refund silently selected a fee policy.' );
+}
+$unscoped_gateway_refund = wc_create_refund( array( 'order_id' => $order->get_id(), 'amount' => '1.00', 'reason' => 'Direct gateway lacks fee decision', 'refund_payment' => true ) );
+if ( ! is_wp_error( $unscoped_gateway_refund ) || array() !== wc_get_order( $order->get_id() )->get_refunds() || '' !== wc_get_order( $order->get_id() )->get_meta( '_spacefast_refund_requests' ) ) {
+	throw new RuntimeException( 'A direct gateway refund bypassed the authenticated fee decision or retained temporary accounting.' );
+}
 $permissions = static fn (): array => array_map( static fn ( \WC_Customer_Download $permission ): array => $permission->get_data(), \WC_Data_Store::load( 'customer-download' )->get_downloads( array( 'order_id' => $order->get_id() ) ) );
 $permissions_before = wp_json_encode( $permissions() );
 $active_dispute = array( array( 'id' => 'dp_restore' . $order->get_id(), 'status' => 'needs_response' ) );

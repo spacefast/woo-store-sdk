@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.1
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.1.5
+Stable tag: 0.1.10
 License: GPLv2 or later
 
 Managed commerce for one Space and environment per WordPress installation.
@@ -191,6 +191,9 @@ real Connect payments, 3DS and API event delivery still require their integratio
 proof; the local native result contract does not claim it.
 
 == Changelog ==
+
+= 0.1.10 =
+* Add authenticated native refunds with durable request IDs and explicit fee decisions.
 
 = 0.1.5 =
 * Add scoped native Woo order lists and details with captured historical lines.
