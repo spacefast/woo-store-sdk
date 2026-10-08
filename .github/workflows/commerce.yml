@@ -1,0 +1,31 @@
+name: Native Woo commerce
+on:
+  pull_request:
+    paths:
+      - 'plugin/**'
+      - 'e2e/**'
+      - '.github/workflows/commerce.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'plugin/**'
+      - 'e2e/**'
+      - '.github/workflows/commerce.yml'
+permissions:
+  contents: read
+jobs:
+  commerce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Native Woo contracts with CPT and HPOS
+        run: node e2e/commerce-fixture.mjs
+      - name: Container diagnostics
+        if: failure()
+        run: docker compose -p woo-commerce-contract -f e2e/fixtures/commerce-compose.yaml logs --tail=100
+      - name: Remove disposable fixture
+        if: always()
+        run: node e2e/commerce-fixture.mjs down
