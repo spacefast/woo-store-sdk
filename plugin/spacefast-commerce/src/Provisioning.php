@@ -38,6 +38,10 @@ final class Provisioning {
 		if ( ! $synchronizer->check_orders_table_exists() && ! $synchronizer->create_database_tables() ) {
 			\WP_CLI::error( 'Woo order tables could not be prepared.' );
 		}
+		if ( 'yes' !== get_option( 'woocommerce_feature_fulfillments_enabled' ) ) {
+			update_option( 'woocommerce_feature_fulfillments_enabled', 'yes' );
+			wc_get_container()->get( \Automattic\WooCommerce\Admin\Features\Fulfillments\FulfillmentsController::class )->initialize_fulfillments();
+		}
 		$pages = $this->prepare_pages();
 		if ( is_wp_error( $pages ) ) {
 			\WP_CLI::error( $pages->get_error_message() );
@@ -100,6 +104,7 @@ final class Provisioning {
 			'woocommerce_downloadable_product_permissions', 'actionscheduler_actions',
 			'actionscheduler_groups', 'actionscheduler_claims', 'actionscheduler_logs',
 			'wc_orders', 'wc_order_addresses', 'wc_order_operational_data', 'wc_orders_meta',
+			'wc_order_fulfillments', 'wc_order_fulfillment_meta',
 		) as $suffix ) {
 			$table = $wpdb->prefix . $suffix;
 			if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) !== $table ) {

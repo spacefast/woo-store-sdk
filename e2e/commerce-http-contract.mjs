@@ -38,10 +38,24 @@ query.searchParams.set('query', `to:${fixture.original_email}`);
 const messages = await (await fetch(query)).json();
 assert.ok(messages.messages.length > 0, 'Native Woo email was not captured');
 let deliveredLink = false;
+let resentLink = false;
 for (const message of messages.messages) {
   const detail = await (await fetch(new URL(`/api/v1/message/${message.ID}`, mailpit))).json();
   const body = `${detail.Text}\n${detail.HTML}`.replaceAll('&amp;', '&');
-  if (body.includes(fixture.original_url)) deliveredLink = true;
+  if (body.includes(fixture.original_url)) {
+    deliveredLink = true;
+    if (message.Subject === fixture.resend_subject) resentLink = true;
+  }
 }
 assert.equal(deliveredLink, true, 'Woo email omitted the native purchased-file link');
+assert.equal(resentLink, true, 'Native resend email omitted the retained purchased-file link');
+const shippingQuery = new URL('/api/v1/search', mailpit);
+shippingQuery.searchParams.set('query', `to:${fixture.shipping_email}`);
+const shippingMessages = await (await fetch(shippingQuery)).json();
+let deliveredTracking = 0;
+for (const message of shippingMessages.messages) {
+  const detail = await (await fetch(new URL(`/api/v1/message/${message.ID}`, mailpit))).json();
+  if (`${detail.Text}\n${detail.HTML}`.replaceAll('&amp;', '&').includes(fixture.tracking_url)) deliveredTracking++;
+}
+assert.equal(deliveredTracking, 1, 'Shipment retry duplicated or lost Woo tracking email');
 console.log('PASS: native Woo protected HTTP delivery, purchased-version retention, new-version delivery, cache denial, invalid-grant denial, public-file denial, native delivery email');

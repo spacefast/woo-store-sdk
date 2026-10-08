@@ -13,6 +13,8 @@ try {
   for (const name of ['commerce-contract.php', 'commerce-refund-contract.php']) {
     docker('cp', `e2e/${name}`, `${container}:/tmp/${name}`);
   }
+  wp('option', 'delete', 'woocommerce_feature_fulfillments_enabled');
+  wp('eval-file', '/tmp/commerce-contract.php', 'prepare-only');
   for (const storage of ['no', 'yes']) {
     // Use native synchronization before changing the authoritative storage lane.
     wp('wc', 'hpos', 'sync');

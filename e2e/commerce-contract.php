@@ -39,6 +39,11 @@ try {
 } finally {
 	unlink( $binding_file );
 }
+// Run first preparation in its own bootstrap; the next contract process loads native feature hooks.
+if ( ( $args[0] ?? null ) === 'prepare-only' ) {
+	return;
+}
+commerce_check( 'yes' === get_option( 'woocommerce_feature_fulfillments_enabled' ), 'Provisioning did not enable native fulfillment storage.' );
 // CLI provisioning runs in a separate process; emulate the next HTTP request's fresh post cache.
 foreach ( array( 'cart', 'checkout' ) as $page_name ) {
 	clean_post_cache( wc_get_page_id( $page_name ) );
@@ -156,6 +161,14 @@ $order->add_product( wc_get_product( $id ), 1 );
 $order->calculate_totals();
 $order->save();
 $line = current( $order->get_items() );
+$shipping_order = wc_create_order();
+$shipping_order->set_payment_method( 'spacefast_connect' );
+$shipping_order->set_billing_email( 'shipping-' . $key . '@example.test' );
+$shipping_order->add_product( wc_get_product( $id ), 1 );
+$shipping_order->calculate_totals();
+$shipping_order->save();
+$shipping_order->payment_complete( 'pi_nativeShipmentFixture' );
+
 // A root SQL override bypasses hooks; the next source sync must observe and repair it.
 global $wpdb;
 $wpdb->update( $wpdb->postmeta, array( 'meta_value' => '99.00' ), array( 'post_id' => $id, 'meta_key' => '_regular_price' ) );
@@ -355,6 +368,7 @@ try {
 try {
 	foreach ( $foreign_ids as $foreign_id ) {
 		commerce_check( 404 === commerce_request( 'GET', '/orders/' . $foreign_id, $headers )->get_status(), 'Native detail leaked foreign scope.' );
+		commerce_check( 404 === commerce_request( 'POST', '/orders/' . $foreign_id . '/resend', $headers )->get_status(), 'Native resend crossed order scope.' );
 	}
 	$page = commerce_request( 'GET', '/orders', $headers, null, array( 'limit'=>1, 'page'=>1 ) );
 	commerce_check( 200 === $page->get_status(), 'Native order page failed.' );
@@ -366,6 +380,39 @@ try {
 		wc_get_order( $foreign_id )->delete( true );
 	}
 }
+
+// Native resend retains consumed permission state and delivers Woo's order-details email.
+$permissions = static fn (): array => array_map( static fn ( \WC_Customer_Download $permission ): array => $permission->get_data(), \WC_Data_Store::load( 'customer-download' )->get_downloads( array( 'order_id' => $digital_order->get_id() ) ) );
+foreach ( \WC_Data_Store::load( 'customer-download' )->get_downloads( array( 'order_id' => $digital_order->get_id() ) ) as $permission ) {
+	$permission->set_downloads_remaining( 3 );
+	$permission->set_download_count( 2 );
+	$permission->save();
+}
+$permissions_before = wp_json_encode( $permissions() );
+commerce_check( 401 === commerce_request( 'POST', $history_path . '/resend', array() )->get_status(), 'Anonymous native resend was accepted.' );
+$resend = commerce_request( 'POST', $history_path . '/resend', $headers );
+commerce_check( 200 === $resend->get_status() && 'requested' === $resend->get_data()['data']['status'], 'Native order-details resend failed.' );
+commerce_check( $permissions_before === wp_json_encode( $permissions() ), 'Native resend renewed or reset download permissions.' );
+$download_fixture = json_decode( file_get_contents( '/tmp/commerce-download-contract.json' ), true );
+$download_fixture['resend_subject'] = WC()->mailer()->get_emails()['WC_Email_Customer_Invoice']->get_subject();
+file_put_contents( '/tmp/commerce-download-contract.json', wp_json_encode( $download_fixture ) );
+// Source converted this product to digital. Its already-purchased physical line still ships.
+$shipment_path = '/orders/' . $shipping_order->get_id() . '/ship';
+$shipment_input = array( 'request_id' => wp_generate_uuid4(), 'tracking_number' => 'native-' . $key, 'tracking_url' => 'https://tracking.example.test/' . $key );
+commerce_check( 401 === commerce_request( 'POST', $shipment_path, array(), $shipment_input )->get_status(), 'Anonymous shipment mutated native fulfillment.' );
+$shipment = commerce_request( 'POST', $shipment_path, $headers, $shipment_input );
+commerce_check( 200 === $shipment->get_status(), 'Native shipment failed: ' . wp_json_encode( $shipment->get_data() ) );
+commerce_check( $shipment->get_data() === commerce_request( 'POST', $shipment_path, $headers, $shipment_input )->get_data(), 'Shipment retry duplicated its native fulfillment.' );
+commerce_check( 409 === commerce_request( 'POST', $shipment_path, $headers, array_merge( $shipment_input, array( 'tracking_number' => 'different' ) ) )->get_status(), 'Shipment retry accepted changed tracking.' );
+$fulfillments = \WC_Data_Store::load( 'order-fulfillment' )->read_fulfillments( \WC_Order::class, (string) $shipping_order->get_id() );
+commerce_check( 1 === count( $fulfillments ) && $fulfillments[0]->get_tracking_url() === $shipment_input['tracking_url'] && 'fulfilled' === $fulfillments[0]->get_status(), 'Shipment did not persist one tracked native fulfillment.' );
+commerce_check( current( $shipping_order->get_items() )->get_id() === $fulfillments[0]->get_items()[0]['item_id'] && 'fulfilled' === \Automattic\WooCommerce\Admin\Features\Fulfillments\FulfillmentUtils::get_order_fulfillment_status( wc_get_order( $shipping_order->get_id() ) ), 'Native fulfillment lost historical physical lines or native order status.' );
+commerce_check( 409 === commerce_request( 'POST', $shipment_path, $headers, array_merge( $shipment_input, array( 'request_id' => wp_generate_uuid4() ) ) )->get_status(), 'Another request overshipped the native order.' );
+commerce_check( 409 === commerce_request( 'POST', $history_path . '/ship', $headers, $shipment_input )->get_status(), 'A paid digital order received a physical shipment.' );
+$download_fixture['shipping_email'] = $shipping_order->get_billing_email();
+$download_fixture['tracking_url'] = $shipment_input['tracking_url'];
+file_put_contents( '/tmp/commerce-download-contract.json', wp_json_encode( $download_fixture ) );
+echo "PASS: native resend retains permissions; historical physical shipment uses one retry-safe Woo fulfillment\n";
 echo "PASS: scoped native order list/detail, bounded pagination, historical lines and buyer-detail separation\n";
 $rotated = array_merge( $binding, array( 'credential' => bin2hex( random_bytes( 32 ) ) ) );
 commerce_check( true === $store->bind( $rotated ), 'Credential rotation failed.' );

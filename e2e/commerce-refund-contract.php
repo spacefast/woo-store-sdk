@@ -27,6 +27,10 @@ if ( is_wp_error( $full ) || wc_get_order( $order->get_id() )->is_download_permi
 	throw new RuntimeException( 'Native full refund retained paid access.' );
 }
 $full_view = $view->detail( $request )->get_data()['data'];
+$refunded_resend = $view->resend( $request );
+if ( ! is_wp_error( $refunded_resend ) || 'order_delivery_unavailable' !== $refunded_resend->get_error_code() ) {
+	throw new RuntimeException( 'Native resend revived delivery for a fully refunded order.' );
+}
 if ( wc_format_decimal( $order->get_total(), wc_get_price_decimals() ) !== $full_view['refunded_total'] || 'refunded' !== $full_view['status'] || $full_view['paid'] ) {
 	throw new RuntimeException( 'Native order view did not converge to the complete native refund.' );
 }
