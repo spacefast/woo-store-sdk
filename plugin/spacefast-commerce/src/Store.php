@@ -15,6 +15,9 @@ final class Store {
 	}
 
 	public function binding(): array {
+		if ( function_exists( 'spacefast_commerce_runtime_binding' ) ) {
+			return spacefast_commerce_runtime_binding();
+		}
 		$binding = get_option( 'spacefast_commerce_binding', array() );
 		return is_array( $binding ) ? $binding : array();
 	}
@@ -70,7 +73,13 @@ final class Store {
 		$binding = array_intersect_key( $input, array_flip( array( 'space_id', 'store_id', 'environment', 'origin', 'currency', 'country' ) ) );
 		$binding['origin'] = rtrim( $binding['origin'], '/' );
 		$binding['credential_hash'] = hash( 'sha256', $input['credential'] );
-		update_option( 'spacefast_commerce_binding', $binding, false );
+		if ( function_exists( 'spacefast_commerce_runtime_bind' ) ) {
+			if ( ! spacefast_commerce_runtime_bind( $binding ) ) {
+				return new \WP_Error( 'store_binding_failed', 'Protected store identity could not be saved.' );
+			}
+		} else {
+			update_option( 'spacefast_commerce_binding', $binding, false );
+		}
 		update_option( 'woocommerce_currency', $binding['currency'] );
 		update_option( 'woocommerce_default_country', $binding['country'] );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );

@@ -91,6 +91,12 @@ request Space, traversal and symlink backing. This location is visible to the
 provider's PHP workers; SSH home directories above htdocs are not. The hosting
 integration must prove anonymous URL denial and native download delivery.
 
+On Spacefast, the runtime also owns the private provisioning binding used by
+both its admission gate and this companion. Native provisioning writes one
+atomic record; rotating a credential replaces that record. Generic hosts keep
+the binding in a private WordPress option. Orders and download permissions
+remain ordinary Woo data in both modes.
+
 PUT /wp-json/spacefast-commerce/v1/files/{sha256} accepts raw bytes and an
 X-Spacefast-Filename header (URL-encoded safe filename), with the same bound
 store authentication. Uploads verify the content hash before publishing a
