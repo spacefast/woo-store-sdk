@@ -57,6 +57,8 @@ export default defineConfig({
   output: "static",
   integrations: [react()],
   vite: {
+    // Keep concurrent local store and preview servers from replacing each other's bundles.
+    cacheDir: origin ? "node_modules/.vite-store" : "node_modules/.vite-preview",
     plugins: [
       {
         name: "local-store-preview",
