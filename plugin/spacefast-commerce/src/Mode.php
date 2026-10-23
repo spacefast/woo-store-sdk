@@ -60,7 +60,7 @@ final class Mode {
 		if ( 'live' === get_option( 'spacefast_commerce_mode' ) ) {
 			return '';
 		}
-		$text = __( 'This is a test store. Checkout uses a test payment method and no money is taken.', 'spacefast-commerce' );
+		$text = __( 'This is a test store. The test payment method takes no money. Other payment methods use their own settings.', 'spacefast-commerce' );
 		if ( ! wc_tax_enabled() ) {
 			$text .= ' ' . __( 'Taxes are not charged yet.', 'spacefast-commerce' );
 		}
