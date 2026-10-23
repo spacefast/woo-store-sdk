@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "merchant": {
+    "name": "Pixel Shed",
+    "brand": {
+      "logo": null,
+      "accent": null
+    },
+    "country": "US",
+    "currency": "usd",
+    "downloads": {
+      "limit": null,
+      "expiryDays": null
+    }
+  },
+  "shipping": null,
+  "products": [
+    {
+      "key": "icon-pack",
+      "kind": "digital",
+      "name": "Icon pack",
+      "summary": null,
+      "description": null,
+      "price": {
+        "amountMinor": 900,
+        "currency": "usd"
+      },
+      "image": null,
+      "page": "/icons/",
+      "asset": {
+        "path": "assets/icons.zip",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "size": 10
+      },
+      "active": true,
+      "stock": null
+    },
+    {
+      "key": "retired-pack",
+      "kind": "digital",
+      "name": "Retired pack",
+      "summary": null,
+      "description": null,
+      "price": {
+        "amountMinor": 500,
+        "currency": "usd"
+      },
+      "image": null,
+      "page": null,
+      "asset": {
+        "path": "assets/retired.zip",
+        "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "size": 10
+      },
+      "active": false,
+      "stock": null
+    }
+  ],
+  "emails": {}
+}
