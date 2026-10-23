@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Storefront
  * Description: Hosted checkout, customer accounts, and cache signals for headless WooCommerce storefronts.
- * Version: 0.1.3
+ * Version: 0.1.4
  * Requires at least: 6.4
  * Requires PHP: 8.1
  * WC requires at least: 8.3

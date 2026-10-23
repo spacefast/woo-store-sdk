@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.2
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.2.5
+Stable tag: 0.2.6
 License: GPLv2 or later
 
 Source-managed WooCommerce stores with portable bundles, native checkout,

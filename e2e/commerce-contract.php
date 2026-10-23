@@ -198,6 +198,13 @@ WC()->cart->calculate_totals();
 commerce_check( array() === WC()->shipping()->get_packages()[0]['rates'], 'An undeclared destination received a managed shipping rate.' );
 WC()->cart->empty_cart();
 commerce_check( wc_get_page_id( 'cart' ) < 1 && 'checkout' === get_post_field( 'post_name', wc_get_page_id( 'checkout' ) ) && 'my-account' === get_post_field( 'post_name', wc_get_page_id( 'myaccount' ) ), 'Fixed pages and cart ownership failed.' );
+// Simulate a plugin/SQL write that bypasses the managed-page guard. Woo's
+// canonical checkout factory is protected in 11.2; repair must still work.
+$checkout_id = wc_get_page_id( 'checkout' );
+$wpdb->update( $wpdb->posts, array( 'post_content' => 'Broken checkout content' ), array( 'ID' => $checkout_id ) );
+clean_post_cache( $checkout_id );
+commerce_result( $plugin->catalog->apply( commerce_bundle( $store ), $options ) );
+commerce_check( has_block( 'woocommerce/checkout-contact-information-block', get_post_field( 'post_content', $checkout_id ) ), 'Checkout repair did not restore the native form blocks.' );
 commerce_check( 'no' === get_option( 'woocommerce_enable_myaccount_registration' ) && 'yes' === get_option( 'woocommerce_enable_guest_checkout' ), 'Native checkout created a customer signup path.' );
 commerce_check( 'https://store.example.test/books/field-guide/' === get_permalink( $book_id ), 'Native product link did not point to the storefront page.' );
 

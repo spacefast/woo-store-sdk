@@ -97,7 +97,10 @@ final class Storefront {
 				$post = $id ? get_post( $id ) : null;
 				$content = $post && 'page' === $post->post_type && $this->valid_content( $page, $post->post_content )
 					? $post->post_content
-					: ( 'checkout' === $name ? \WC_Install::get_checkout_block_content() : '<!-- wp:shortcode -->[woocommerce_my_account]<!-- /wp:shortcode -->' );
+					: ( 'checkout' === $name
+						// Woo 11.2 keeps its canonical nested checkout markup in a protected factory.
+						? (string) ( new \ReflectionMethod( \WC_Install::class, 'get_checkout_block_content' ) )->invoke( null )
+						: '<!-- wp:shortcode -->[woocommerce_my_account]<!-- /wp:shortcode -->' );
 				$fields = array(
 					'post_type' => 'page',
 					'post_status' => 'publish',
