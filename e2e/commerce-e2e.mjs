@@ -149,6 +149,32 @@ for (const storage of ['no', 'yes']) {
   assert.equal(receipt(['status']).mode, 'live');
   console.log(`PASS: native ${storage === 'yes' ? 'HPOS' : 'CPT'} HTTP Store API, authorized delivery, SMTP, live cleanup and retry`);
 }
+// Real, fresh-process native fencing: delayed commands cannot undo test mode
+// or a newer canonical origin. Restore only the dedicated fixture's own fence.
+const beforeFence = receipt(['status']);
+const fenceOptions = ['spacefast_commerce_mode_generation', 'spacefast_commerce_command_generation'];
+for (const option of fenceOptions) {
+  const missing = spawnSync('docker', [...wpArgs, 'eval', `echo json_encode(get_option('${option}', null));`], { encoding: 'utf8', timeout: 30_000 });
+  assert.equal(missing.status, 0, missing.stderr);
+  assert.equal(JSON.parse(missing.stdout), null, 'Use a disposable fixture without a control-plane mode fence.');
+}
+try {
+  receipt(['mode', 'test', '--generation=2', '--command-generation=2', '--canonical-origin=https://current.example.test']);
+  receipt(['mode', 'live', '--generation=1', '--command-generation=3', '--canonical-origin=https://stale.example.test'], 'mode-superseded');
+  receipt(['mode', 'test', '--generation=2', '--command-generation=1', '--canonical-origin=https://stale.example.test'], 'mode-superseded');
+  receipt(['mode', 'live'], 'mode-superseded');
+  receipt(['apply', '/tmp/does-not-matter', '--generation=1', '--command-generation=3'], 'mode-superseded');
+  receipt(['disable', '--generation=2', '--command-generation=1'], 'mode-superseded');
+  assert.equal(receipt(['status']).counter, beforeFence.counter);
+  const current = receipt(['status']);
+  assert.equal(current.mode, 'test');
+  assert.equal(current.canonicalOrigin, 'https://current.example.test');
+  receipt(['mode', 'test', '--generation=2', '--command-generation=2', '--canonical-origin=https://current.example.test']);
+  receipt(['mode', beforeFence.mode, '--generation=3', '--command-generation=4', `--canonical-origin=${beforeFence.canonicalOrigin}`]);
+} finally {
+  for (const option of fenceOptions) wp('option', 'delete', option);
+}
+console.log('PASS: fresh-process native mode and canonical-origin generations refuse late SSH commands');
 if (process.env.COMMERCE_ENGINE_ROOT) {
   docker('cp', `${path.resolve(process.env.COMMERCE_ENGINE_ROOT)}/.`, `${container}:/tmp/commerce-engine`);
   docker('cp', 'e2e/commerce-engine-contract.php', `${container}:/tmp/commerce-engine-contract.php`);

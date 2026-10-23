@@ -5,7 +5,7 @@ namespace SpacefastCommerce;
 
 /**
  * `wp spacefast-commerce apply` (D2): one idempotent, serialized apply of a store bundle.
- * Every check that can refuse runs before the first write, so a refusal changes nothing.
+ * Catalog refusal checks run before catalog writes. The native command fence advances first.
  */
 final class Catalog {
 	public function __construct(
@@ -23,6 +23,10 @@ final class Catalog {
 	 */
 	public function apply( string $directory, array $options ): array|\WP_Error {
 		return $this->store->with_lock( function () use ( $directory, $options ): array|\WP_Error {
+			$fence = $this->store->accept_command( $options['generation'] ?? null, $options['command_generation'] ?? null );
+			if ( is_wp_error( $fence ) ) {
+				return $fence;
+			}
 			try {
 				return $this->apply_locked( $directory, $options );
 			} finally {
@@ -32,8 +36,12 @@ final class Catalog {
 	}
 
 	/** Removing the store from a version disables sales, while native orders and buyer grants remain. */
-	public function disable(): array|\WP_Error {
-		return $this->store->with_lock( function (): array|\WP_Error {
+	public function disable( ?int $generation = null, ?int $command_generation = null ): array|\WP_Error {
+		return $this->store->with_lock( function () use ( $generation, $command_generation ): array|\WP_Error {
+			$fence = $this->store->accept_command( $generation, $command_generation );
+			if ( is_wp_error( $fence ) ) {
+				return $fence;
+			}
 			$current = $this->current();
 			$counter = $this->store->next_counter();
 			$changes = $this->managed->apply( function () use ( $current ): array|\WP_Error {
