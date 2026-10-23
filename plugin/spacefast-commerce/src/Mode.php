@@ -84,32 +84,50 @@ final class Mode {
 			}
 		}
 		return $this->store->with_lock( function () use ( $mode, $canonical_origin ): array|\WP_Error {
+			if ( 'live' === $mode ) {
+				$orders = Orders::count();
+				if ( is_wp_error( $orders ) ) {
+					return $orders;
+				}
+			}
 			if ( 'live' === $mode && ! $this->stripe_enabled() ) {
 				return Bundle::refuse( 'stripe-not-enabled', 'Set up and enable the Stripe gateway in WooCommerce → Settings → Payments before going live.' );
 			}
-			if ( null !== $canonical_origin ) {
-				$this->store->set_canonical_origin( $canonical_origin );
-			}
 			if ( 'test' === $mode ) {
+				if ( null !== $canonical_origin ) {
+					$this->store->set_canonical_origin( $canonical_origin );
+				}
 				update_option( 'spacefast_commerce_mode', 'test', true );
 				$settings = get_option( 'woocommerce_dummy_settings', array() );
 				update_option( 'woocommerce_dummy_settings', array_merge( is_array( $settings ) ? $settings : array(), array( 'enabled' => 'yes', 'result' => 'success' ) ) );
 				return array( 'ok' => true, 'mode' => 'test', 'cancelledTestOrders' => 0 );
 			}
 			$cancelled = $this->cancel_test_orders();
+			if ( is_wp_error( $cancelled ) ) {
+				return $cancelled;
+			}
+			if ( null !== $canonical_origin ) {
+				$this->store->set_canonical_origin( $canonical_origin );
+			}
 			update_option( 'spacefast_commerce_mode', 'live', true );
 			return array( 'ok' => true, 'mode' => 'live', 'cancelledTestOrders' => $cancelled );
 		} );
 	}
 
 	/** Going live: cancel every dummy-paid order through Woo, silently, and revoke its downloads. */
-	private function cancel_test_orders(): int {
+	private function cancel_test_orders(): int|\WP_Error {
+		global $wpdb;
+		$wpdb->last_error = '';
 		$orders = wc_get_orders( array(
 			'type' => 'shop_order',
 			'payment_method' => self::TEST_GATEWAY,
 			'status' => array_merge( array( 'trash' ), array_keys( wc_get_order_statuses() ) ),
 			'limit' => -1,
+			'cache_results' => false,
 		) );
+		if ( '' !== $wpdb->last_error || ! is_array( $orders ) ) {
+			return Bundle::refuse( 'orders-unavailable', 'Test orders could not be read for go-live cleanup. Retry when the store database is available.' );
+		}
 		$downloads = \WC_Data_Store::load( 'customer-download' );
 		$cancelled = 0;
 		foreach ( $orders as $order ) {

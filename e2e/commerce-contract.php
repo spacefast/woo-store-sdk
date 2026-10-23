@@ -240,6 +240,8 @@ global $wpdb;
 $order_count_before_fault = SpacefastCommerce\Orders::count();
 $counter_before_fault = $plugin->store->counter();
 $hash_before_fault = $plugin->store->store_hash();
+$mode_before_fault = $plugin->store->mode();
+$origin_before_fault = $plugin->store->canonical_origin();
 $order_table = Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled() ? $wpdb->prefix . 'wc_orders' : $wpdb->posts;
 $held_table = $order_table . '_retention_' . substr( str_replace( '-', '', wp_generate_uuid4() ), 0, 10 );
 $suppress_errors_before_fault = $wpdb->suppress_errors( true );
@@ -250,6 +252,9 @@ try {
 	commerce_check( is_wp_error( $unavailable_orders ) && 'orders-unavailable' === $unavailable_orders->get_error_code(), 'Unavailable order history was reported as empty.' );
 	$unavailable_status = $plugin->provisioning->status();
 	commerce_check( is_wp_error( $unavailable_status ) && 'orders-unavailable' === $unavailable_status->get_error_code(), 'Status advertised a zero-order receipt during a database failure.' );
+	$unavailable_mode = $plugin->mode->set( 'live', 'https://must-not-commit.example' );
+	commerce_check( is_wp_error( $unavailable_mode ) && 'orders-unavailable' === $unavailable_mode->get_error_code(), 'Go-live ignored unavailable test-order cleanup.' );
+	commerce_check( $mode_before_fault === $plugin->store->mode() && $origin_before_fault === $plugin->store->canonical_origin(), 'Go-live changed mode or canonical origin without readable order history.' );
 	$unavailable_apply = $plugin->catalog->apply( $directory, $options );
 	commerce_check( is_wp_error( $unavailable_apply ) && 'orders-unavailable' === $unavailable_apply->get_error_code(), 'Catalog apply ignored unavailable order history.' );
 	commerce_check( $counter_before_fault === $plugin->store->counter() && $hash_before_fault === $plugin->store->store_hash(), 'An unavailable history refusal changed the native catalog receipt.' );
