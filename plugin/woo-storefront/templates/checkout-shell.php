@@ -40,6 +40,7 @@ $woo_storefront_type     = $woo_storefront_branding['typography'];
 		}
 		.woo-storefront-shell { box-sizing: border-box; margin: 0 auto; max-width: 1200px; padding: 32px 20px 64px; }
 		.woo-storefront-logo { display: block; height: auto; margin: 0 auto 32px; max-height: 72px; max-width: min(260px, 80vw); }
+		.woo-storefront-name { display: block; margin: 0 auto 32px; text-align: center; color: inherit; font-size: 24px; text-decoration: none; }
 		.wc-block-components-button:not(.is-link) { --wp-components-color-accent: var(--woo-storefront-primary); }
 	</style>
 </head>
@@ -48,8 +49,17 @@ $woo_storefront_type     = $woo_storefront_branding['typography'];
 	<main class="woo-storefront-shell">
 		<?php if ( '' !== $woo_storefront_branding['logo'] ) : ?>
 			<img class="woo-storefront-logo" src="<?php echo esc_url( $woo_storefront_branding['logo'] ); ?>" alt="<?php echo esc_attr( get_bloginfo( 'name' ) ); ?>">
+		<?php else : ?>
+			<a class="woo-storefront-name" href="<?php echo esc_url( home_url( '/' ) ); ?>"><?php echo esc_html( get_bloginfo( 'name' ) ); ?></a>
 		<?php endif; ?>
-		<?php echo do_blocks( '<!-- wp:woocommerce/checkout /-->' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Rendered block markup. ?>
+		<?php
+		// Render the assigned Woo page, including its inner blocks and merchant settings.
+		// A self-closing checkout block has no form fields in WooCommerce 11.2.
+		while ( have_posts() ) {
+			the_post();
+			the_content();
+		}
+		?>
 	</main>
 	<?php wp_footer(); ?>
 </body>

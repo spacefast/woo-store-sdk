@@ -118,6 +118,10 @@ final class CheckoutEntry {
 	 * Redirect a completed checkout to its still-valid signed return target.
 	 */
 	public function redirect_after_order(): void {
+		if ( ! apply_filters( 'woo_storefront_checkout_redirect_after_order', true ) ) {
+			return;
+		}
+
 		if ( ! function_exists( 'is_order_received_page' ) || ! is_order_received_page() || ! function_exists( 'WC' ) || ! WC()->session ) {
 			return;
 		}
@@ -159,12 +163,12 @@ final class CheckoutEntry {
 	 * @return string
 	 */
 	public function checkout_template( string $template ): string {
-		if (
+		$checkout =
 			function_exists( 'is_checkout' ) &&
 			is_checkout() &&
 			! is_wc_endpoint_url( 'order-received' ) &&
-			! is_wc_endpoint_url( 'order-pay' )
-		) {
+			! is_wc_endpoint_url( 'order-pay' );
+		if ( $checkout || ( function_exists( 'is_account_page' ) && is_account_page() ) ) {
 			return WOO_STOREFRONT_PATH . 'templates/checkout-shell.php';
 		}
 

@@ -48,3 +48,20 @@ The repository also includes separate production images for local or self-hosted
 - `deploy/woo/Dockerfile` builds WordPress, WooCommerce, the feature plugin, and idempotent demo catalog seeding.
 
 The Woo image needs a persistent `/var/www/html` volume and MySQL. It is not required for the Pressable-backed public demo. No Stripe secret or payment processor is used by the demo.
+
+## Native managed-commerce fixture
+
+`pnpm test:e2e:commerce:fixture` prepares pinned WordPress/Woo/MariaDB/Mailpit and
+runs the native CPT/HPOS contract. Remove the retained disposable project with
+`pnpm test:e2e:commerce:down`.
+
+`node e2e/commerce-fixture.mjs prepare` prepares the store without running tests.
+The companion consumes a portable `store.json` bundle through WP-CLI and uses the
+installed native gateways. A unique `COMMERCE_FIXTURE_PROJECT`
+and `COMMERCE_HTTP_PORT=0 COMMERCE_MAIL_PORT=0` create an isolated project on
+dynamic local ports. `COMMERCE_FIXTURE_READY` reports its container and origins;
+`node e2e/commerce-fixture.mjs down` removes that named project and its volumes.
+Set `COMMERCE_ENGINE_ROOT` to a Spacefast `runtime/engine` directory to also prove
+the companion against the real engine's request principal and capability filters.
+See [the companion reference](plugin/spacefast-commerce/TECHNICAL.md) for commands,
+source-field ownership, modes, portable host setup and release packaging.
