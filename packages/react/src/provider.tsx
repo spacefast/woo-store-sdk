@@ -67,9 +67,19 @@ export function createWooQueryClient(config?: QueryClientConfig): QueryClient {
   return applyCacheProfileDefaults(new QueryClient(config))
 }
 
+/**
+ * What the hooks call. `RpcTransport` (the server-adapter protocol) and the
+ * browser adapter in `@woo/storefront-browser` both implement it; pick one in
+ * the provider config.
+ */
+export interface StoreTransport {
+  query<T>(operation: string, args?: unknown): Promise<T>
+  mutate<T>(operation: string, args?: unknown): Promise<T>
+}
+
 interface StoreContextValue {
   factories: StorefrontClient
-  transport: RpcTransport
+  transport: StoreTransport
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null)
@@ -77,7 +87,8 @@ const StoreContext = createContext<StoreContextValue | null>(null)
 export interface StoreProviderProps extends RpcTransportOptions {
   children: ReactNode
   queryClient?: QueryClient
-  transport?: RpcTransport
+  /** Defaults to an `RpcTransport` on `basePath`. */
+  transport?: StoreTransport
 }
 
 export function StoreProvider({

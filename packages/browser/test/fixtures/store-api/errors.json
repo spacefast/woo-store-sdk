@@ -1,0 +1,30 @@
+{
+  "productNotFound": {
+    "code": "woocommerce_rest_product_invalid_id",
+    "message": "Invalid product ID.",
+    "data": {
+      "status": 404
+    }
+  },
+  "addItemInvalidProduct": {
+    "code": "woocommerce_rest_cart_invalid_product",
+    "message": "Product with ID &quot;999999&quot; was not found and cannot be added to the cart.",
+    "data": {
+      "status": 400
+    }
+  },
+  "orderMissingBillingEmail": {
+    "code": "woocommerce_rest_invalid_billing_email",
+    "message": "No billing email provided.",
+    "data": {
+      "status": 401
+    }
+  },
+  "orderInvalidKey": {
+    "code": "woocommerce_rest_invalid_order",
+    "message": "Invalid order ID or key provided.",
+    "data": {
+      "status": 401
+    }
+  }
+}

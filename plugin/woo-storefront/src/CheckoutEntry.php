@@ -218,17 +218,37 @@ final class CheckoutEntry {
 		$cookie_name = 'wp_woocommerce_session_' . COOKIEHASH;
 		$expiring    = max( time(), $expiration - HOUR_IN_SECONDS );
 
-		// Mirror WC_Session_Handler exactly: hash over "customer_id|expiration",
-		// via wp_fast_hash on WP 6.8+ (`$generic$…`) with the pre-6.8 HMAC
-		// fallback, and single-pipe field delimiters (current cookie format).
+		// Single-pipe field delimiters over "customer_id|expiration" (current cookie format).
 		$to_hash     = $customer_id . '|' . $expiration;
-		$cookie_hash = function_exists( 'wp_fast_hash' )
-			? wp_fast_hash( $to_hash )
-			: hash_hmac( 'md5', $to_hash, wp_hash( $to_hash ) );
+		$cookie_hash = self::session_cookie_hash( $to_hash );
 		$cookie      = implode( '|', array( $customer_id, (string) $expiration, (string) $expiring, $cookie_hash ) );
 
 		wc_setcookie( $cookie_name, $cookie, $expiration, is_ssl(), true );
 		$_COOKIE[ $cookie_name ] = $cookie;
+	}
+
+	/**
+	 * Hash a session cookie payload exactly as the installed WC_Session_Handler verifies it.
+	 *
+	 * The algorithm is private to Woo and has changed between releases (WooCommerce 11.2
+	 * verifies `hash_hmac( 'md5', $message, wp_hash( $message ) )`; earlier builds used
+	 * `wp_fast_hash()`). A guessed algorithm fails silently: Woo starts a fresh, empty
+	 * session and the checkout redirects to the cart. So ask the handler itself.
+	 *
+	 * @param string $message Cookie payload ("customer_id|expiration").
+	 * @return string
+	 */
+	private static function session_cookie_hash( string $message ): string {
+		if ( class_exists( \WC_Session_Handler::class ) && method_exists( \WC_Session_Handler::class, 'hash' ) ) {
+			$handler = function_exists( 'WC' ) && WC()->session instanceof \WC_Session_Handler
+				? WC()->session
+				: new \WC_Session_Handler();
+			return (string) ( new \ReflectionMethod( \WC_Session_Handler::class, 'hash' ) )->invoke( $handler, $message );
+		}
+
+		return function_exists( 'wp_fast_hash' )
+			? wp_fast_hash( $message )
+			: hash_hmac( 'md5', $message, wp_hash( $message ) );
 	}
 
 	/**

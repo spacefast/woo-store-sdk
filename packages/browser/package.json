@@ -1,0 +1,26 @@
+{
+  "name": "@woo/storefront-browser",
+  "version": "0.1.0",
+  "description": "Browser adapter for @woo/storefront-react: drives the WooCommerce Store API directly with a Cart-Token session, no server.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@woo/storefront-core": "workspace:*"
+  }
+}

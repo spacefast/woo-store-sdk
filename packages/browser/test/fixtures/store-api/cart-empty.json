@@ -1,0 +1,66 @@
+{
+  "items": [],
+  "coupons": [],
+  "fees": [],
+  "totals": {
+    "total_items": "0",
+    "total_items_tax": "0",
+    "total_fees": "0",
+    "total_fees_tax": "0",
+    "total_discount": "0",
+    "total_discount_tax": "0",
+    "total_shipping": null,
+    "total_shipping_tax": null,
+    "total_price": "0",
+    "total_tax": "0",
+    "tax_lines": [],
+    "currency_code": "EUR",
+    "currency_symbol": "€",
+    "currency_minor_unit": 2,
+    "currency_decimal_separator": ".",
+    "currency_thousand_separator": ",",
+    "currency_prefix": "€",
+    "currency_suffix": ""
+  },
+  "shipping_address": {
+    "first_name": "",
+    "last_name": "",
+    "company": "",
+    "address_1": "",
+    "address_2": "",
+    "city": "",
+    "state": "",
+    "postcode": "",
+    "country": "PL",
+    "phone": ""
+  },
+  "billing_address": {
+    "first_name": "",
+    "last_name": "",
+    "company": "",
+    "address_1": "",
+    "address_2": "",
+    "city": "",
+    "state": "",
+    "postcode": "",
+    "country": "PL",
+    "email": "",
+    "phone": ""
+  },
+  "needs_payment": false,
+  "needs_shipping": false,
+  "payment_requirements": [
+    "products"
+  ],
+  "has_calculated_shipping": false,
+  "shipping_rates": [],
+  "items_count": 0,
+  "items_weight": 0,
+  "cross_sells": [],
+  "errors": [],
+  "payment_methods": [
+    "cod"
+  ],
+  "extensions": {},
+  "checkout_url": "http://localhost:8890/checkout/c/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidF9hNzYzODJkYmQzNGYxZDgzNjZmM2JjNGJhYzdkM2EiLCJleHAiOjE3OTI5NTA4MzksImlzcyI6InN0b3JlLWFwaSIsImlhdCI6MTc5Mjc3ODAzOX0.zDLeJLASmQ4JLlxb-3Ij3BbNjEjJfxt0mzuv9gDT4UA?expires=1792778339&key=nvbfS5XTTB6UiO9ePB6YZyOVJAcQL0P6Rz0MlMD1TZM"
+}
