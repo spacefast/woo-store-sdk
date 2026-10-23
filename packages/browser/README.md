@@ -20,18 +20,18 @@ the adapter in the provider config.
 
 ## Supported operations
 
-| Operation | Store API | Hook |
-| --- | --- | --- |
-| `products.list` | `GET /wc/store/v1/products` | `useProducts` |
-| `products.bySlug` | `GET /wc/store/v1/products?slug=` | `useProduct('slug')` |
-| `products.byId` | `GET /wc/store/v1/products/{id}` | `useProduct(id)` |
-| `products.byKey` | `GET /wc/store/v1/products?sku=` (exact match) | `transport.productByKey(key)` |
-| `cart.get` | `GET /wc/store/v1/cart` | `useCart` |
-| `cart.addItem` | `POST /wc/store/v1/cart/add-item` | `useAddToCart` |
-| `cart.updateItem` | `POST /wc/store/v1/cart/update-item` | `useUpdateCartItem` |
-| `cart.removeItem` | `POST /wc/store/v1/cart/remove-item` | `useRemoveCartItem` |
-| `cart.checkoutUrl` | `GET /wc/store/v1/cart?return_url=` → `checkout_url` | `useCheckoutUrl` |
-| `order.get` | `GET /wc/store/v1/order/{id}?key=&billing_email=` | `transport.order(lookup)` |
+| Operation          | Store API                                            | Hook                          |
+| ------------------ | ---------------------------------------------------- | ----------------------------- |
+| `products.list`    | `GET /wc/store/v1/products`                          | `useProducts`                 |
+| `products.bySlug`  | `GET /wc/store/v1/products?slug=`                    | `useProduct('slug')`          |
+| `products.byId`    | `GET /wc/store/v1/products/{id}`                     | `useProduct(id)`              |
+| `products.byKey`   | `GET /wc/store/v1/products?sku=` (exact match)       | `transport.productByKey(key)` |
+| `cart.get`         | `GET /wc/store/v1/cart`                              | `useCart`                     |
+| `cart.addItem`     | `POST /wc/store/v1/cart/add-item`                    | `useAddToCart`                |
+| `cart.updateItem`  | `POST /wc/store/v1/cart/update-item`                 | `useUpdateCartItem`           |
+| `cart.removeItem`  | `POST /wc/store/v1/cart/remove-item`                 | `useRemoveCartItem`           |
+| `cart.checkoutUrl` | `GET /wc/store/v1/cart?return_url=` → `checkout_url` | `useCheckoutUrl`              |
+| `order.get`        | `GET /wc/store/v1/order/{id}?key=&billing_email=`    | `transport.order(lookup)`     |
 
 Every other operation throws `UnsupportedOperationError` (`status: 501`,
 `code: 'unsupported_operation'`). That covers categories, coupons, headless
@@ -42,7 +42,7 @@ customer token that must never reach the browser.
 ## Checkout
 
 The `woo-storefront` plugin signs a `/checkout/c/{token}` URL into every cart
-response, so the browser holds no secret. `useCheckoutUrl()` asks for it with a
+response, so the browser needs no integration secret. `useCheckoutUrl()` asks for it with a
 `return_url` of `confirmationPath` (default `/order-confirmation/`) on the page
 origin. Navigate to the URL it returns. Woo adopts the cart, takes payment in
 its checkout shell, then redirects to
@@ -69,13 +69,13 @@ request on hosts that never serve previews.
 
 ## Options
 
-| Option | Default |
-| --- | --- |
-| `url` | the page origin |
-| `session` | `sessionStorage` under `woo-storefront:session:<url>` |
-| `source` | `'detect'` |
-| `commerceConfigPath` | `/__spacefast/commerce.json` |
-| `catalogPath` | `/_spacefast/catalog.json` |
-| `confirmationPath` | `/order-confirmation/` |
+| Option               | Default                                               |
+| -------------------- | ----------------------------------------------------- |
+| `url`                | the page origin                                       |
+| `session`            | `sessionStorage` under `woo-storefront:session:<url>` |
+| `source`             | `'detect'`                                            |
+| `commerceConfigPath` | `/__spacefast/commerce.json`                          |
+| `catalogPath`        | `/_spacefast/catalog.json`                            |
+| `confirmationPath`   | `/order-confirmation/`                                |
 
 `sessionStorage` belongs to one tab, so a second tab starts with an empty cart.

@@ -3,7 +3,7 @@
 A two-product storefront on `@woo/storefront-browser` and the unchanged React
 hooks. Astro builds static catalog, cart and confirmation pages. WooCommerce
 owns checkout, orders, payment, shipping, email and download authorization.
-There is no storefront server or browser credential.
+A guest Cart-Token in sessionStorage authenticates the browser.
 
 Use Node 24 and pnpm 11.16.0. From the workspace root:
 
