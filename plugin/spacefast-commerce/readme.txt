@@ -1,216 +1,80 @@
 === Spacefast Commerce ===
 Requires at least: 7.0
-Requires PHP: 8.1
+Requires PHP: 8.2
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.1.12
+Stable tag: 0.2.0
 License: GPLv2 or later
 
-Managed commerce for one Space and environment per WordPress installation.
-Stripe platform secrets never belong in this plugin or its binding.
+Source-managed WooCommerce stores with portable bundles, native checkout,
+protected downloads, source-designed email layouts and test/live modes.
 
-== Development status ==
+== Description ==
 
-This is the managed-catalog and native payment boundary of the Sell replacement.
-The API payment transport, verified event relay, full provisioning readiness
-and operational actions are still under implementation. Do not enable live
-payments with this version.
+The companion reads store.json and files/<sha256> through WP-CLI, reconciles
+native products in place, and protects source-managed fields in wp-admin and
+REST. Stock counts, categories, tax settings and native order history remain
+in WooCommerce. Physical products support multiple quantities and one declared
+flat shipping charge per order. The storefront owns the cart; Woo owns checkout.
 
-== Store binding ==
+Test mode enables Dummy Payments and adds checkout/email banners. A public test
+store can deliver real downloads through a free test purchase. Live mode requires
+an enabled WooCommerce Stripe gateway and removes Dummy Payments from classic
+and block checkout. Going live silently cancels test orders, restores their
+stock and revokes download grants. Retrying repairs interrupted cleanup.
 
-The trusted runtime installer supplies a private JSON file to:
+The plugin includes no custom payment gateway or credential-bound REST apply
+endpoint. The parked payment integration is excluded from release archives.
 
-wp spacefast-commerce bind /private/path/store.json
+== Installation ==
 
-Required fields: space_id, store_id, environment (test or live), origin (HTTPS
-origin), currency, country and credential (32-256 URL-safe random characters).
-Country and currency come from explicit merchant configuration. Binding does
-not activate payments, guess tax policy or install Woo's schema. Repeating the
-same binding is safe; another Space/store/environment is rejected. Rotating the
-credential revokes the previous one. Remove the provisioning file after use.
+Install and activate WooCommerce, Woo Storefront, WooCommerce Dummy Payments,
+WooCommerce Stripe and this companion. Configure a writable protected directory
+outside the public document root using SPACEFAST_COMMERCE_PRIVATE_ROOT. On hosts
+whose WordPress core sits outside the public root, also set
+SPACEFAST_COMMERCE_PUBLIC_ROOT to the actual document root. Spacefast supplies
+protected storage through its runtime.
 
-== Deploy-owned catalog ==
+Before WooCommerce creates pages, run:
 
-GET /wp-json/spacefast-commerce/v1/products returns {data:{currency,products}}.
-The observed native currency is present even when the catalog is empty.
-It includes active products and retired products explicitly requested with
-keys[]=<desired-key>, with at most 100 desired keys. Retired history is not
-scanned on every deploy. Reads include source-owned fields and private file
-content identities, not backing paths. Invalid download drift is reported as
-downloads=null so the pipeline can repair or report it. Re-ingesting hash-verified
-source bytes repairs a corrupted regular file atomically at the same grant path.
-PUT /wp-json/spacefast-commerce/v1/products/{key} applies one pipeline-selected
-product. Headers: Authorization: Bearer <credential>, X-Spacefast-Space-Id,
-X-Spacefast-Store-Id and X-Spacefast-Environment. The pipeline computes the diff
-and sequences writes; the plugin does not discover source or reconcile it.
+wp --require=/path/to/spacefast-commerce/cli.php spacefast-commerce preflight
 
-Product body: generation (positive monotonic deployment integer), name,
-description (safe Woo HTML), price (decimal string), enabled (boolean), kind (digital/physical),
-downloads (list of sha256/filename declarations), download_limit and
-download_expiry (days). Physical products require shipping: included=true,
-allowedCountries (distinct supported country codes), and policy. Digital
-products have shipping=null. Omitted limits are unlimited and have no expiry.
-Names must be plain text; unsafe description HTML is refused before a write,
-rather than silently changing the source. Sale prices and scheduled sale dates
-are cleared by source apply. Currency drift refuses all catalog writes and
-generation fences until merchant configuration is restored.
-The generation is stable across operation retries. An older generation cannot
-apply after a newer one starts. A source removal uses enabled=false and retains
-native Woo order history. No product deletion endpoint is supplied.
-Removal sends {generation, action:"archive"} to the product path; it preserves
-existing files, grants and order history. The pipeline first sends {generation}
-to PUT /catalog/fence, including for empty or unchanged catalogs, to retire
-older in-flight writes. The generation belongs to the durable source intent.
+After activating the plugins:
 
-Bound checkout accepts one managed product with quantity one. Physical source
-destinations constrain the native checkout country list, Store API and classic
-validation. A native free-shipping method is prepared once; eligible packages
-receive included shipping, and source generations invalidate cached rates.
+wp spacefast-commerce setup
+wp spacefast-commerce apply /path/to/bundle --canonical-origin=https://shop.example
+wp spacefast-commerce status
+wp spacefast-commerce mode test
+wp spacefast-commerce mode live
+wp spacefast-commerce email render 123 customer_completed_order
 
-Normal Woo UI, REST and CRUD writes cannot change source-managed fields.
-Transactional writes such as native sales counters remain permitted. Root
-operators can override the database; the next source apply is authoritative.
+Every command emits exactly one JSON document and exits 0 on success or 1 on
+failure. A refusal has error.code, detail, pointer and key. Apply refuses removed
+products before writing; retain their source key with active:false to retire
+sales. --origin=rollback deactivates products missing from the rollback target.
+Hosting coordinators supply --baseline=key1,key2 for the live version or
+--no-live-catalog when no catalog is live. Empty --baseline= is refused.
 
 == Verification ==
 
-Against a disposable WordPress with WooCommerce, Woo Storefront and this plugin:
+The repository's node e2e/commerce-fixture.mjs command creates a dedicated,
+pinned WordPress/WooCommerce/MariaDB/Mailpit fixture and runs the native contract
+against CPT and HPOS order storage. COMMERCE_FIXTURE_PROJECT selects its name;
+COMMERCE_HTTP_PORT=0 and COMMERCE_MAIL_PORT=0 use dynamic local ports. The runner
+retains disposable products and orders for inspection. Never run it on a merchant
+installation. node e2e/commerce-fixture.mjs down removes that named fixture.
 
-wp eval-file e2e/commerce-contract.php
+The fixture credentials are intentionally disposable test-only values, contain
+no merchant data, and are not reused outside that local infrastructure.
 
-For the full native HTTP, email and refund contract, use:
-
-pnpm test:e2e:commerce:fixture
-
-This creates a dedicated Docker Compose fixture with pinned images, verifies
-the Woo and WP-CLI download hashes, installs the native plugins and runs the
-contract. Local URLs default to http://127.0.0.1:28983 (WordPress) and
-http://127.0.0.1:28984 (Mailpit). COMMERCE_HTTP_PORT and COMMERCE_MAIL_PORT can
-override them. Credentials are intentionally disposable test-only values.
-The fixture is retained for inspection; remove it with:
-
-pnpm test:e2e:commerce:down
-
-For an already prepared disposable installation, run pnpm test:e2e:commerce.
-
-The runner requires a dedicated disposable Docker WordPress container
-(COMMERCE_WP_CONTAINER, default sell-managed-woo-wp) with PHP WP-CLI at
-/usr/local/bin/wp-cli.phar, these three plugins activated, pretty permalinks,
-writable private storage and uploads owned by www-data. The mail fixture below
-must connect to a dedicated Mailpit instance. The runner synchronizes native
-order tables and exercises both CPT and HPOS, leaving HPOS enabled afterward.
-It creates native products/orders and retains them in the disposable fixture.
-Never point this runner at a merchant installation.
-
-== Private downloads ==
-
-The installer must configure SPACEFAST_COMMERCE_PUBLIC_ROOT to the actual
-public document root and SPACEFAST_COMMERCE_PRIVATE_ROOT to a writable
-persistent directory outside it. Do not infer the document root from ABSPATH:
-managed hosts can keep WordPress core in a separate shared tree. Missing or
-public storage configuration fails closed. On Spacefast, the verified runtime
-loader supplies spacefast_commerce_runtime_private_root instead. It confines
-each store to the runtime's protected .stattic/storage tree and rejects another
-request Space, traversal and symlink backing. This location is visible to the
-provider's PHP workers; SSH home directories above htdocs are not. The hosting
-integration must prove anonymous URL denial and native download delivery.
-
-On Spacefast, the runtime also owns the private provisioning binding used by
-both its admission gate and this companion. Native provisioning writes one
-atomic record; rotating a credential replaces that record. Generic hosts keep
-the binding in a private WordPress option. Orders and download permissions
-remain ordinary Woo data in both modes.
-
-PUT /wp-json/spacefast-commerce/v1/files/{sha256} accepts raw bytes and an
-X-Spacefast-Filename header (URL-encoded safe filename), with the same bound
-store authentication. Uploads verify the content hash before publishing a
-private immutable file. Apply a download declaration only after upload succeeds.
-
-Woo grants and checks native download permissions, sends its native order
-emails, and serves Force Downloads without a redirect fallback. File updates
-retain historical references in product metadata and keep old bytes. New
-orders receive only current files; old grants retain their purchased bytes.
-Archival stops new sales and preserves native download links. This boundary
-still requires wp.cloud transport/cache/route acceptance before launch.
-
-For actual HTTP delivery and email verification, copy the fixture output
-/tmp/commerce-download-contract.json from the WordPress container and run:
-
-node e2e/commerce-http-contract.mjs /path/to/commerce-download-contract.json
-
-The disposable mail fixture uses e2e/fixtures/commerce-mail.php and Mailpit on
-COMMERCE_MAILPIT_URL (default http://127.0.0.1:28982). Never install that fixture
-on a merchant site.
-
-== Native setup ==
-
-The root installer runs wp spacefast-commerce prepare /private/path/store.json.
-This validates the bound identity, runs Woo’s native synchronous database update
-command and creates missing HPOS tables through Woo’s own synchronizer. Retries
-preserve the existing authoritative order storage mode. Native cart and checkout
-pages receive the store's Space ownership tag so runtime queries can see them.
-Existing page content is preserved; another Space's ownership or a page without
-the native Woo block/shortcode prevents preparation. The installer deletes
-the private binding file afterward. No buyer request performs this setup.
-
-GET /wp-json/spacefast-commerce/v1/readiness requires the same bound credential
-and reports native schema/private-storage inventory plus checkout_pages_ready.
-catalog_ready covers only schema/private-storage inventory. Page readiness
-checks native content and Space ownership; it does not prove HTTP admission.
-The platform must separately prove public routes, mail, cron
-execution and payment connectivity before declaring the store ready.
-
-== Native payment boundary ==
-
-The spacefast_connect gateway is registered for classic checkout and Checkout
-Block. It remains unavailable without installer-owned private constants
-SPACEFAST_COMMERCE_API_ORIGIN (HTTPS) and SPACEFAST_COMMERCE_API_CREDENTIAL.
-No platform Stripe key belongs in these constants. The API endpoint
-POST /commerce/payments is still being implemented; configuring these
-constants alone does not establish readiness.
-
-Woo constructs the authenticated request from its own persisted order, with
-stable store/environment/order/attempt identity and the final native total.
-The API must derive the connected account and application fee and provide an
-account-scoped PaymentIntent confirmation. The gateway forwards buyers to
-Woo's protected order-pay page, where Stripe-hosted fields confirm using the
-API-provided connected-account context. Return URLs come from native Woo.
-Browser confirmation never marks an order paid.
-
-GET /wp-json/spacefast-commerce/v1/orders/{id}/payment provides the trusted
-native snapshot; PUT on the same path binds an intent or applies an API-verified
-paid result. Both require the exact bound store credential and headers. The
-body carries action (bind_intent or paid), attempt_id, intent_id, total (native
-decimal string), and currency. Only source-managed single-product quantity-one
-orders using this gateway are admitted. A different intent, attempt or amount
-is refused. An unpaid recalculated total requires intent synchronization before
-completion. Native order metadata and a database lock serialize result writes;
-retries use Woo payment_complete once, retaining native grants and mail. Closed
-or refunded orders cannot be reopened by a late paid result.
-
-Native boundary tests prove these transitions in CPT and HPOS. Stripe.js,
-real Connect payments, 3DS and API event delivery still require their integration
-proof; the local native result contract does not claim it.
-
-Native Action Scheduler jobs begin when the gateway captures an attempted payment.
-Each job submits only order/attempt identity to the authenticated API, which checks
-its retained original payment and queues current Stripe status/refund/dispute
-reconciliation. Jobs never create a charge. Pending orders retry every five
-minutes; historical orders check hourly. API failures retain a successor job.
-Repeated order saves do not duplicate jobs, and a changed store or attempt stops
-the old job. A reliable external minute cron runner remains required; installing
-this module does not prove provider cron execution.
+See TECHNICAL.md for the bundle, ownership, email, mode, native principal and
+packaging contracts. Provider installation, public browser checkout and live
+merchant payments have separate integration gates.
 
 == Changelog ==
 
-= 0.1.12 =
-* Schedule authenticated payment reconciliation with retry after API interruption.
-
-
-= 0.1.11 =
-* Expose native refundable balance, eligibility and pending command recovery.
-* Preserve digital order reads when automatic fulfillment has no tracking number.
-
-= 0.1.10 =
-* Add authenticated native refunds with durable request IDs and explicit fee decisions.
-
-= 0.1.5 =
-* Add scoped native Woo order lists and details with captured historical lines.
+= 0.2.0 =
+* Reconcile portable source bundles through serialized WP-CLI apply.
+* Preserve native products, stock, order history and stable buyer download grants.
+* Add source-managed store settings, shipping, pages and native email layouts.
+* Add test/live modes with retryable native cleanup and named merchant capabilities.
+* Park the previous payment relay and exclude it from release archives.

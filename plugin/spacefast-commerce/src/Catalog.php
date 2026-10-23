@@ -3,310 +3,292 @@
 declare(strict_types=1);
 namespace SpacefastCommerce;
 
-/** Executes deploy-owned catalog writes. This plugin never computes a desired-state diff. */
+/**
+ * `wp spacefast-commerce apply` (D2): one idempotent, serialized apply of a store bundle.
+ * Every check that can refuse runs before the first write, so a refusal changes nothing.
+ */
 final class Catalog {
-	public function __construct( private Store $store, private ManagedProducts $managed, private PrivateFiles $files ) {}
+	public function __construct(
+		private Store $store,
+		private ManagedProducts $managed,
+		private PrivateFiles $files,
+		private Media $media,
+		private Shipping $shipping,
+		private Storefront $storefront,
+		private Emails $emails,
+	) {}
 
-	public function register(): void {
-		add_action( 'rest_api_init', function (): void {
-			register_rest_route( 'spacefast-commerce/v1', '/products', array(
-				'methods' => 'GET',
-				'permission_callback' => array( $this->store, 'authorize' ),
-				'callback' => array( $this, 'read' ),
-			) );
-			register_rest_route( 'spacefast-commerce/v1', '/catalog/fence', array(
-				'methods' => 'PUT',
-				'permission_callback' => array( $this->store, 'authorize' ),
-				'callback' => array( $this, 'fence' ),
-			) );
-			register_rest_route( 'spacefast-commerce/v1', '/products/(?P<key>[a-z0-9][a-z0-9_-]{0,63})', array(
-				'methods' => 'PUT',
-				'permission_callback' => array( $this->store, 'authorize' ),
-				'callback' => array( $this, 'write' ),
-			) );
+	/**
+	 * @param array{origin: string, baseline: ?array, canonical_origin: ?string} $options
+	 */
+	public function apply( string $directory, array $options ): array|\WP_Error {
+		return $this->store->with_lock( function () use ( $directory, $options ): array|\WP_Error {
+			try {
+				return $this->apply_locked( $directory, $options );
+			} finally {
+				$this->media->cleanup();
+			}
 		} );
 	}
 
-	/** Even an empty or unchanged desired catalog must retire older in-flight writes. */
-	public function fence( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$input = $request->get_json_params();
-		if ( ! is_array( $input ) || array_keys( $input ) !== array( 'generation' ) || ! is_int( $input['generation'] ) || $input['generation'] < 1 ) {
-			return new \WP_Error( 'catalog_invalid', 'Supply a positive catalog generation.', array( 'status' => 422 ) );
-		}
-		return $this->with_generation( $input['generation'], static fn (): \WP_REST_Response => new \WP_REST_Response( array( 'data' => $input ) ) );
-	}
-
-	public function read( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$keys = $request->get_param( 'keys' ) ?? array();
-		if ( ! is_array( $keys ) || ! array_is_list( $keys ) || count( $keys ) > 100 ) {
-			return new \WP_Error( 'catalog_invalid', 'Supply at most 100 desired product keys.', array( 'status' => 422 ) );
-		}
-		foreach ( $keys as $key ) {
-			if ( ! is_string( $key ) || ! preg_match( '/^[a-z0-9][a-z0-9_-]{0,63}$/D', $key ) ) {
-				return new \WP_Error( 'catalog_invalid', 'A desired product key is invalid.', array( 'status' => 422 ) );
+	private function apply_locked( string $directory, array $options ): array|\WP_Error {
+		if ( null !== $options['canonical_origin'] ) {
+			$origin = Store::normalize_origin( $options['canonical_origin'] );
+			if ( is_wp_error( $origin ) ) {
+				return $origin;
 			}
 		}
-		if ( count( $keys ) !== count( array_unique( $keys ) ) ) {
-			return new \WP_Error( 'catalog_invalid', 'Desired product keys must be distinct.', array( 'status' => 422 ) );
+		$bundle = Bundle::open( $directory );
+		if ( is_wp_error( $bundle ) ) {
+			return $bundle;
 		}
-		// Retired history is not a desired-state scan. Include active rows and explicitly desired keys.
-		$products = $this->products( array(
-			'limit' => 101,
-			'status' => array( 'publish', 'private' ),
-			'meta_query' => array(
-				array( 'key' => '_spacefast_space_id', 'value' => $this->store->binding()['space_id'] ),
-				array( 'key' => '_spacefast_product_key', 'compare' => 'EXISTS' ),
-			),
-		) );
-		if ( count( $products ) > 100 ) {
-			return new \WP_Error( 'catalog_limit_exceeded', 'The active managed catalog exceeds 100 products.', array( 'status' => 409 ) );
+		$store = $bundle->store;
+		$merchant = $store['merchant'];
+		$current = $this->current();
+		$desired = array();
+		foreach ( $store['products'] as $index => $product ) {
+			$desired[] = Planner::desired( $product, $index, $merchant );
 		}
-		if ( $keys ) {
-			$desired = $this->products( array(
-				'limit' => 101,
-				'status' => array( 'publish', 'draft', 'private' ),
-				'meta_query' => array(
-					array( 'key' => '_spacefast_space_id', 'value' => $this->store->binding()['space_id'] ),
-					array( 'key' => '_spacefast_product_key', 'value' => $keys, 'compare' => 'IN' ),
-				),
-			) );
-			if ( count( $desired ) > 100 ) {
-				return new \WP_Error( 'catalog_identity_conflict', 'Desired managed product keys are duplicated.', array( 'status' => 409 ) );
-			}
-			$products = array_merge( $products, $desired );
+		$plan = Planner::plan(
+			$desired,
+			array_values( $current ),
+			$options['origin'],
+			$options['baseline'],
+			$merchant['currency'],
+			get_woocommerce_currency(),
+			array() !== $current || Orders::count() > 0,
+		);
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
 		}
-		$unique = array();
-		foreach ( $products as $product ) {
-			$unique[$product->get_id()] = $product;
+		$refusal = $this->refusals( $bundle, $current );
+		if ( is_wp_error( $refusal ) ) {
+			return $refusal;
 		}
-		return new \WP_REST_Response( array( 'data' => array( 'currency' => get_woocommerce_currency(), 'products' => array_values( array_map( array( $this, 'projection' ), $unique ) ) ) ) );
-	}
 
-	private function projection( \WC_Product $product ): array {
+		// First write. Anything failing from here on is an infrastructure fault; apply is idempotent, so retry.
+		$counter = $this->store->next_counter();
+		if ( null !== $options['canonical_origin'] ) {
+			$this->store->set_canonical_origin( $options['canonical_origin'] );
+		}
+		$written = $this->managed->apply( function () use ( $bundle, $plan, $desired, $current ): true|\WP_Error {
+			$result = $this->apply_store( $bundle );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$actions = array_column( $plan['changes'], 'action', 'key' );
+			foreach ( $desired as $index => $product ) {
+				if ( 'unchanged' === $actions[ $product['key'] ] ) {
+					continue;
+				}
+				$result = $this->write( $product, $bundle->store['products'][ $index ], $bundle, $current[ $product['key'] ] ?? null );
+				if ( is_wp_error( $result ) ) {
+					return Bundle::refuse( 'apply-failed', 'Product "' . $product['key'] . '" was not written: ' . $result->get_error_message() . ' Retry the apply.', '/products/' . $index, $product['key'] );
+				}
+			}
+			foreach ( $plan['deactivate'] as $key ) {
+				$product = wc_get_product( $current[ $key ]['id'] );
+				$product->set_status( 'draft' );
+				$product->save();
+			}
+			return true;
+		} );
+		if ( is_wp_error( $written ) ) {
+			return $written;
+		}
+		update_option( 'spacefast_commerce_store_hash', $bundle->hash, false );
 		return array(
-			'id' => $product->get_id(),
-			'key' => $product->get_meta( '_spacefast_product_key' ),
-			'name' => $product->get_name(),
-			'description' => $product->get_description(),
-			'cover_image' => $this->cover_source( (int) $product->get_image_id() ),
-			'gallery_image_ids' => $product->get_gallery_image_ids(),
-			'price' => $product->get_regular_price(),
-			'sale_price' => $product->get_sale_price(),
-			'date_on_sale_from' => $product->get_date_on_sale_from()?->getTimestamp(),
-			'date_on_sale_to' => $product->get_date_on_sale_to()?->getTimestamp(),
-			'currency' => get_woocommerce_currency(),
-			'type' => $product->get_type(),
-			'status' => $product->get_status(),
-			'short_description' => $product->get_short_description(),
-			'sku' => $product->get_sku(),
-			'catalog_visibility' => $product->get_catalog_visibility(),
-			'sold_individually' => $product->is_sold_individually(),
-			'manage_stock' => $product->get_manage_stock(),
-			'downloads' => $this->files->declarations( $product ),
-			'download_limit' => $product->get_download_limit(),
-			'download_expiry' => $product->get_download_expiry(),
-			'shipping' => $product->is_virtual() ? null : $product->get_meta( '_spacefast_shipping' ),
-			'enabled' => 'publish' === $product->get_status(),
-			'kind' => $product->is_virtual() ? 'digital' : 'physical',
-			'generation' => (int) $product->get_meta( '_spacefast_catalog_generation' ),
+			'ok' => true,
+			'counter' => $counter,
+			'storeHash' => $bundle->hash,
+			'changes' => $plan['changes'],
+			'warnings' => $plan['warnings'],
 		);
 	}
 
-	/** The pipeline supplies a monotonic deployment generation, reused on retry. */
-	public function write( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$input = $request->get_json_params();
-		if ( is_array( $input ) && 'archive' === ( $input['action'] ?? null ) ) {
-			if ( array_diff( array_keys( $input ), array( 'generation', 'action' ) ) || ! is_int( $input['generation'] ?? null ) || $input['generation'] < 1 ) {
-				return new \WP_Error( 'catalog_invalid', 'Supply an archive action and positive generation.', array( 'status' => 422 ) );
+	/** Refusals that need the store: SKU clashes, pages, and every referenced file. */
+	private function refusals( Bundle $bundle, array $current ): true|\WP_Error {
+		$store = $bundle->store;
+		foreach ( $store['products'] as $index => $product ) {
+			$owner = wc_get_product_id_by_sku( $product['key'] );
+			if ( $owner && ManagedProducts::key( $owner ) !== $product['key'] ) {
+				return Bundle::refuse( 'sku-clash', 'Another WooCommerce product (#' . $owner . ') already uses the SKU "' . $product['key'] . '". Change that product\'s SKU or pick another key.', '/products/' . $index . '/key', $product['key'] );
 			}
-			return $this->with_generation( $input['generation'], function () use ( $request, $input ): \WP_REST_Response|\WP_Error {
-				$found = $this->find( $request['key'] );
-				if ( is_wp_error( $found ) ) {
-					return $found;
+		}
+		$pages = $this->storefront->check_pages();
+		if ( is_wp_error( $pages ) ) {
+			return $pages;
+		}
+		$checks = array( fn () => $this->media->prepare( $store['merchant']['brand']['logo'], $bundle, '/merchant/brand/logo' ) );
+		foreach ( $store['products'] as $index => $product ) {
+			$checks[] = fn () => $this->media->prepare( $product['image'], $bundle, '/products/' . $index . '/image' );
+			if ( null !== $product['asset'] ) {
+				$checks[] = fn () => $this->files->prepare( $product['asset'], $bundle, '/products/' . $index . '/asset' );
+			}
+		}
+		foreach ( $checks as $check ) {
+			$result = $check();
+			if ( is_wp_error( $result ) ) {
+				$data = $result->get_error_data();
+				$key = null;
+				if ( is_array( $data ) && preg_match( '#^/products/(\d+)/#', (string) ( $data['pointer'] ?? '' ), $match ) ) {
+					$key = $store['products'][ (int) $match[1] ]['key'];
 				}
-				if ( ! $found ) {
-					return new \WP_REST_Response( array( 'data' => null ) );
-				}
-				$product = $found[0];
-				$this->managed->apply( static function () use ( $product, $input ): void {
-					$product->set_status( 'draft' );
-					$product->update_meta_data( '_spacefast_catalog_generation', $input['generation'] );
-					$product->save();
-				} );
-				return new \WP_REST_Response( array( 'data' => $this->projection( $product ) ) );
-			} );
-		}
-		if ( ! is_array( $input ) || array_diff( array_keys( $input ), array( 'generation', 'name', 'description', 'cover_image', 'price', 'enabled', 'kind', 'downloads', 'download_limit', 'download_expiry', 'shipping' ) ) ||
-			! is_int( $input['generation'] ?? null ) || $input['generation'] < 1 ||
-			! is_string( $input['name'] ?? null ) || '' === trim( $input['name'] ) || strlen( $input['name'] ) > 255 ||
-			! is_string( $input['description'] ?? null ) || strlen( $input['description'] ) > 65536 ||
-			! is_string( $input['price'] ?? null ) || ! preg_match( '/^(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?$/D', $input['price'] ) ||
-			! is_bool( $input['enabled'] ?? null ) || ! in_array( $input['kind'] ?? null, array( 'digital', 'physical' ), true ) ) {
-			return new \WP_Error( 'catalog_invalid', 'Product fields or deployment generation are invalid.', array( 'status' => 422 ) );
-		}
-		if ( sanitize_text_field( $input['name'] ) !== $input['name'] || wp_kses_post( $input['description'] ) !== $input['description'] ) {
-			return new \WP_Error( 'catalog_invalid', 'Use a plain product name and safe description HTML.', array( 'status' => 422 ) );
-		}
-		if ( ! array_key_exists( 'cover_image', $input ) || ( null !== $input['cover_image'] && (
-			! is_string( $input['cover_image'] ) || strlen( $input['cover_image'] ) > 2048 ||
-			'https' !== wp_parse_url( $input['cover_image'], PHP_URL_SCHEME ) ||
-			wp_parse_url( $input['cover_image'], PHP_URL_USER ) || wp_parse_url( $input['cover_image'], PHP_URL_PASS )
-		) ) ) {
-			return new \WP_Error( 'catalog_invalid', 'Supply a public HTTPS cover image URL or null.', array( 'status' => 422 ) );
-		}
-		$shipping = $input['shipping'] ?? null;
-		if ( ( 'digital' === $input['kind'] && null !== $shipping ) || ( 'physical' === $input['kind'] && (
-			! is_array( $shipping ) || array_diff( array_keys( $shipping ), array( 'included', 'allowedCountries', 'policy' ) ) ||
-			true !== ( $shipping['included'] ?? null ) || ! is_array( $shipping['allowedCountries'] ?? null ) ||
-			! array_is_list( $shipping['allowedCountries'] ) || count( $shipping['allowedCountries'] ) < 1 || count( $shipping['allowedCountries'] ) > 250 ||
-			! is_string( $shipping['policy'] ?? null ) || '' === trim( $shipping['policy'] ) || strlen( $shipping['policy'] ) > 1200
-		) ) ) {
-			return new \WP_Error( 'catalog_invalid', 'Physical products require an included-shipping policy and destinations.', array( 'status' => 422 ) );
-		}
-		if ( null !== $shipping ) {
-			$countries = WC()->countries->get_countries();
-			$seen = array();
-			foreach ( $shipping['allowedCountries'] as $country ) {
-				if ( ! is_string( $country ) || ! isset( $countries[$country] ) || isset( $seen[$country] ) ) {
-					return new \WP_Error( 'catalog_invalid', 'Shipping destinations must be distinct supported countries.', array( 'status' => 422 ) );
-				}
-				$seen[$country] = true;
+				return Bundle::refuse( $result->get_error_code(), $result->get_error_message(), $data['pointer'] ?? null, $key );
 			}
 		}
-		$downloads = $this->files->resolve( $input['downloads'] ?? array() );
-		if ( is_wp_error( $downloads ) ) {
-			return $downloads;
-		}
-		if ( $input['enabled'] && 'digital' === $input['kind'] && array() === $downloads ) {
-			return new \WP_Error( 'catalog_invalid', 'An enabled digital product requires a privately ingested download.', array( 'status' => 422 ) );
-		}
-		foreach ( array( 'download_limit', 'download_expiry' ) as $field ) {
-			if ( isset( $input[$field] ) && ( ! is_int( $input[$field] ) || $input[$field] < -1 || $input[$field] > 100000 ) ) {
-				return new \WP_Error( 'catalog_invalid', 'Download limit or expiry is invalid.', array( 'status' => 422 ) );
-			}
-		}
-		return $this->with_generation( $input['generation'], function () use ( $request, $input, $downloads, $shipping ): \WP_REST_Response|\WP_Error {
-			$found = $this->find( $request['key'] );
-			if ( is_wp_error( $found ) ) {
-				return $found;
-			}
-			$product = $found ? new \WC_Product_Simple( $found[0]->get_id() ) : new \WC_Product_Simple();
-			$image_id = $this->cover_attachment( $product, $input['cover_image'] );
-			if ( is_wp_error( $image_id ) ) {
-				return $image_id;
-			}
-			$this->managed->apply( function () use ( $product, $input, $request, $downloads, $shipping, $image_id ): void {
-				$product->set_name( $input['name'] );
-				$product->set_description( wp_kses_post( $input['description'] ) );
-				$product->set_short_description( '' );
-				$product->set_image_id( $image_id );
-				$product->set_gallery_image_ids( array() );
-				$product->update_meta_data( '_spacefast_cover_attachment', $image_id );
-				$product->set_sku( '' );
-				$product->set_catalog_visibility( 'visible' );
-				$product->set_regular_price( $input['price'] );
-				$product->set_sale_price( '' );
-				$product->set_date_on_sale_from( null );
-				$product->set_date_on_sale_to( null );
-				$product->set_price( $input['price'] );
-				$product->set_status( $input['enabled'] ? 'publish' : 'draft' );
-				$product->set_virtual( 'digital' === $input['kind'] );
-				$history = $product->get_meta( '_spacefast_download_history' );
-				$history = is_array( $history ) ? $history : array();
-				foreach ( $downloads as $id => $file ) {
-					$history[$id] = array( 'name' => $file->get_name(), 'file' => $file->get_file() );
-				}
-				$product->update_meta_data( '_spacefast_download_history', $history );
-				$product->set_downloads( $downloads );
-				// Historical grants remain readable even after changing product kind.
-				$product->set_downloadable( (bool) $downloads || (bool) $history );
-				$product->set_download_limit( $input['download_limit'] ?? -1 );
-				$product->set_download_expiry( $input['download_expiry'] ?? -1 );
-				$product->set_sold_individually( true );
-				$product->set_manage_stock( false );
-				$product->update_meta_data( '_spacefast_space_id', $this->store->binding()['space_id'] );
-				$product->update_meta_data( '_spacefast_product_key', $request['key'] );
-				$product->update_meta_data( '_spacefast_shipping', $shipping );
-				$product->update_meta_data( '_spacefast_catalog_generation', $input['generation'] );
-				$product->save();
-			} );
-			return new \WP_REST_Response( array( 'data' => $this->projection( $product ) ) );
-		} );
+		return true;
 	}
 
-	/** Native media owns the bytes and thumbnails; URL declarations never become browser bypass flags. */
-	private function cover_source( int $image_id ): ?string {
-		$file = $image_id ? get_attached_file( $image_id ) : false;
-		$source = $image_id ? get_post_meta( $image_id, '_spacefast_cover_source', true ) : '';
-		return is_string( $source ) && '' !== $source && $file && is_file( $file ) ? $source : null;
+	/** Store-level managed fields (D1, D16) and the D3 shipping zone. */
+	private function apply_store( Bundle $bundle ): true|\WP_Error {
+		$store = $bundle->store;
+		$merchant = $store['merchant'];
+		update_option( 'blogname', $merchant['name'] );
+		update_option( 'woocommerce_currency', strtoupper( $merchant['currency'] ) );
+		// Seeded, not managed: keep the merchant's state when the country part is unchanged (D1).
+		$country = explode( ':', (string) get_option( 'woocommerce_default_country', '' ) )[0];
+		if ( $country !== $merchant['country'] ) {
+			update_option( 'woocommerce_default_country', $merchant['country'] );
+		}
+		$logo = $this->media->attachment( $merchant['brand']['logo'], $bundle );
+		if ( is_wp_error( $logo ) ) {
+			return $logo;
+		}
+		$settings = get_option( 'woo_storefront_settings', array() );
+		$settings = is_array( $settings ) ? $settings : array();
+		$settings['branding'] = array_merge( is_array( $settings['branding'] ?? null ) ? $settings['branding'] : array(), array( 'logo' => $logo ? (string) wp_get_attachment_url( $logo ) : '' ) );
+		$settings['branding']['colors'] = array_merge( is_array( $settings['branding']['colors'] ?? null ) ? $settings['branding']['colors'] : array(), array( 'primary' => $merchant['brand']['accent'] ?? '#7f54b3' ) );
+		update_option( 'woo_storefront_settings', $settings );
+		update_option( 'spacefast_commerce_brand', array( 'name' => $merchant['name'], 'settings' => $settings['branding'] ), false );
+		$shipping = $this->shipping->apply( $store['shipping'], $merchant['currency'] );
+		if ( is_wp_error( $shipping ) ) {
+			return $shipping;
+		}
+		$this->emails->store( $store['emails'] );
+		return $this->storefront->ensure_pages();
 	}
 
-	private function cover_attachment( \WC_Product $product, ?string $source ): int|\WP_Error {
-		if ( null === $source ) {
-			return 0;
+	private function write( array $desired, array $declared, Bundle $bundle, ?array $native ): true|\WP_Error {
+		$product = $native ? new \WC_Product_Simple( $native['id'] ) : new \WC_Product_Simple();
+		$image = $this->media->attachment( $declared['image'], $bundle, $native['id'] ?? 0 );
+		if ( is_wp_error( $image ) ) {
+			return $image;
 		}
-		$previous = (int) $product->get_meta( '_spacefast_cover_attachment' );
-		if ( $previous && $source === $this->cover_source( $previous ) ) {
-			return $previous;
-		}
-		$upload = wc_rest_upload_image_from_url( $source );
-		if ( is_wp_error( $upload ) ) {
-			return new \WP_Error( 'catalog_cover_unavailable', 'The declared cover image could not be installed: ' . $upload->get_error_message(), array( 'status' => 503 ) );
-		}
-		$image_id = wc_rest_set_uploaded_image_as_attachment( $upload, $product->get_id() );
-		if ( ! $image_id ) {
-			return new \WP_Error( 'catalog_cover_unavailable', 'The declared cover image attachment could not be created.', array( 'status' => 503 ) );
-		}
-		update_post_meta( $image_id, '_spacefast_cover_source', $source );
-		return $image_id;
-	}
-
-	/** Woo ignores arbitrary meta_query arguments; its native query extension owns this clause. */
-	private function products( array $args ): array {
-		$filter = static function ( array $query, array $vars ) use ( $args ): array {
-			if ( true === ( $vars['spacefast_catalog_query'] ?? false ) ) {
-				$query['meta_query'] = array( 'relation' => 'AND', $query['meta_query'] ?? array(), $args['meta_query'] );
+		$downloads = array();
+		if ( null !== $declared['asset'] ) {
+			$download = $this->files->download( $desired['key'], $declared['asset'], $bundle );
+			if ( is_wp_error( $download ) ) {
+				return $download;
 			}
-			return $query;
-		};
-		add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $filter, 10, 2 );
+			$downloads[ $download->get_id() ] = $download;
+		}
 		try {
-			return wc_get_products( array_merge( $args, array( 'spacefast_catalog_query' => true ) ) );
-		} finally {
-			remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $filter, 10 );
+			$product->set_props( array(
+				'name' => $desired['name'],
+				'description' => $desired['description'],
+				'short_description' => $desired['short_description'],
+				'regular_price' => $desired['price'],
+				'sale_price' => '',
+				'date_on_sale_from' => null,
+				'date_on_sale_to' => null,
+				'status' => $desired['status'],
+				'sku' => $desired['sku'],
+				'catalog_visibility' => 'visible',
+				'image_id' => $image,
+				'gallery_image_ids' => array(),
+				'virtual' => 'digital' === $desired['kind'],
+				'downloadable' => 'digital' === $desired['kind'],
+				'downloads' => $downloads,
+				'download_limit' => $desired['download_limit'],
+				'download_expiry' => $desired['download_expiry'],
+				'sold_individually' => $desired['sold_individually'],
+				'manage_stock' => $desired['manage_stock'],
+				'menu_order' => $desired['menu_order'],
+			) );
+			$product->set_price( $desired['price'] );
+			// stock.initial seeds a new product once; Woo owns existing stock even when tracking is toggled.
+			if ( null === $native && $desired['manage_stock'] && null !== $desired['stock_initial'] ) {
+				$product->set_stock_quantity( $desired['stock_initial'] );
+				$product->update_meta_data( '_spacefast_stock_initial', $desired['stock_initial'] );
+			}
+			if ( ! $desired['manage_stock'] ) {
+				$product->set_stock_status( 'instock' );
+			}
+			$product->update_meta_data( '_spacefast_product_key', $desired['key'] );
+			if ( null === $desired['page'] ) {
+				$product->delete_meta_data( '_spacefast_page' );
+			} else {
+				$product->update_meta_data( '_spacefast_page', $desired['page'] );
+			}
+			$product->save();
+		} catch ( \WC_Data_Exception $error ) {
+			return new \WP_Error( $error->getErrorCode(), $error->getMessage() );
 		}
+		if ( $image && ! wp_get_post_parent_id( $image ) ) {
+			wp_update_post( array( 'ID' => $image, 'post_parent' => $product->get_id() ) );
+		}
+		return true;
 	}
 
-	private function find( string $key ): array|\WP_Error {
-		$found = $this->products( array(
-			'limit' => 2,
-			'status' => array( 'publish', 'draft', 'private' ),
-			'meta_query' => array(
-				array( 'key' => '_spacefast_space_id', 'value' => $this->store->binding()['space_id'] ),
-				array( 'key' => '_spacefast_product_key', 'value' => $key ),
-			),
+	/** Native projections of every managed product, any status, keyed by source key. */
+	public function current(): array {
+		$ids = get_posts( array(
+			'post_type' => 'product',
+			'post_status' => array( 'publish', 'draft', 'pending', 'private', 'future' ),
+			'fields' => 'ids',
+			'numberposts' => -1,
+			'orderby' => 'ID',
+			'order' => 'ASC',
+			'suppress_filters' => true,
+			'meta_key' => '_spacefast_product_key',
+			'meta_compare' => 'EXISTS',
 		) );
-		return count( $found ) > 1 ? new \WP_Error( 'catalog_identity_conflict', 'Managed product identity is duplicated.', array( 'status' => 409 ) ) : $found;
+		$current = array();
+		$seen = array();
+		foreach ( $ids as $id ) {
+			$product = wc_get_product( $id );
+			if ( ! $product ) {
+				continue;
+			}
+			$projection = $this->projection( $product );
+			// Keep duplicates visible to the planner: it refuses them as an identity conflict.
+			$slot = isset( $seen[ $projection['key'] ] ) ? $projection['key'] . '#' . $id : $projection['key'];
+			$seen[ $projection['key'] ] = true;
+			$current[ $slot ] = $projection;
+		}
+		return $current;
 	}
 
-	private function with_generation( int $generation, callable $write ): \WP_REST_Response|\WP_Error {
-		global $wpdb;
-		$lock = 'sf_catalog_' . substr( hash( 'sha256', $this->store->binding()['store_id'] ), 0, 48 );
-		if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 0)', $lock ) ) ) {
-			return new \WP_Error( 'catalog_busy', 'Another deployment is applying this catalog. Retry.', array( 'status' => 409 ) );
-		}
-		try {
-			if ( get_woocommerce_currency() !== $this->store->binding()['currency'] ) {
-				return new \WP_Error( 'catalog_currency_conflict', 'Restore the configured merchant currency before applying a catalog.', array( 'status' => 409 ) );
-			}
-			if ( $generation < (int) get_option( 'spacefast_commerce_catalog_generation', 0 ) ) {
-				return new \WP_Error( 'catalog_stale', 'A newer deployment owns this catalog.', array( 'status' => 409 ) );
-			}
-			// Fence before mutation so a partial newer apply cannot be undone by an older one.
-			update_option( 'spacefast_commerce_catalog_generation', $generation, false );
-			return $write();
-		} finally {
-			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
-		}
+	public function projection( \WC_Product $product ): array {
+		$key = ManagedProducts::key( $product->get_id() );
+		$page = $product->get_meta( '_spacefast_page' );
+		$initial = $product->get_meta( '_spacefast_stock_initial' );
+		return array(
+			'id' => $product->get_id(),
+			'key' => $key,
+			'name' => $product->get_name( 'edit' ),
+			'description' => trim( $product->get_description( 'edit' ) ),
+			'short_description' => $product->get_short_description( 'edit' ),
+			'image' => $this->media->identity_of( (int) $product->get_image_id( 'edit' ) ),
+			'gallery_image_ids' => array_map( 'intval', $product->get_gallery_image_ids( 'edit' ) ),
+			'price' => (string) $product->get_regular_price( 'edit' ),
+			'sale_price' => (string) $product->get_sale_price( 'edit' ),
+			'date_on_sale_from' => $product->get_date_on_sale_from( 'edit' )?->getTimestamp(),
+			'date_on_sale_to' => $product->get_date_on_sale_to( 'edit' )?->getTimestamp(),
+			'type' => $product->get_type(),
+			'status' => $product->get_status( 'edit' ),
+			'sku' => $product->get_sku( 'edit' ),
+			'catalog_visibility' => $product->get_catalog_visibility( 'edit' ),
+			'sold_individually' => $product->get_sold_individually( 'edit' ),
+			'manage_stock' => $product->get_manage_stock( 'edit' ),
+			'kind' => $product->get_virtual( 'edit' ) ? 'digital' : 'physical',
+			'downloads' => $this->files->declarations( $product, $key ),
+			'download_limit' => $product->get_download_limit( 'edit' ),
+			'download_expiry' => $product->get_download_expiry( 'edit' ),
+			'page' => is_string( $page ) && '' !== $page ? $page : null,
+			'menu_order' => $product->get_menu_order( 'edit' ),
+			'stock_initial' => '' === $initial ? null : (int) $initial,
+		);
 	}
 }

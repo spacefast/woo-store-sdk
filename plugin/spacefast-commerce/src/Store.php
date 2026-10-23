@@ -3,107 +3,103 @@
 declare(strict_types=1);
 namespace SpacefastCommerce;
 
-/** Installation identity and the revocable control-plane credential, never a Stripe secret. */
+/**
+ * Store-level state the companion owns: mode, canonical origin, apply counter and
+ * the last applied store hash. Nothing here is declared in store.json (D21).
+ */
 final class Store {
 	public function register(): void {
-		// Managed checkout keeps Woo's receipt and download experience.
-		add_filter( 'woo_storefront_checkout_redirect_after_order', fn ( bool $redirect ): bool => $this->binding() ? false : $redirect );
-		add_filter( 'woo_storefront_checkout_return_url', fn ( mixed $url ): mixed => $this->binding()['origin'] ?? $url );
-		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			\WP_CLI::add_command( 'spacefast-commerce bind', array( $this, 'bind_command' ) );
+		foreach ( array( 'home_url', 'site_url', 'content_url', 'plugins_url', 'wp_get_attachment_url' ) as $hook ) {
+			add_filter( $hook, array( $this, 'public_url' ) );
 		}
 	}
 
-	public function binding(): array {
-		if ( function_exists( 'spacefast_commerce_runtime_binding' ) ) {
-			return spacefast_commerce_runtime_binding();
+	/** Native Woo links must use the store origin even when cron has no request host. */
+	public function public_url( string $url ): string {
+		$origin = $this->canonical_origin();
+		if ( null === $origin || ! preg_match( '#^https?://#i', $url ) ) {
+			return $url;
 		}
-		$binding = get_option( 'spacefast_commerce_binding', array() );
-		return is_array( $binding ) ? $binding : array();
+		foreach ( array( get_option( 'home' ), get_option( 'siteurl' ) ) as $base ) {
+			$parts = is_string( $base ) ? wp_parse_url( $base ) : false;
+			if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+				continue;
+			}
+			$host = $parts['scheme'] . '://' . $parts['host'] . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' );
+			if ( $url === $host || str_starts_with( $url, $host . '/' ) || str_starts_with( $url, $host . '?' ) ) {
+				return $origin . substr( $url, strlen( $host ) );
+			}
+		}
+		return $url;
+	}
+	public function mode(): string {
+		return 'live' === get_option( 'spacefast_commerce_mode' ) ? 'live' : 'test';
 	}
 
-	/** The trusted installer supplies a JSON file, keeping credentials out of process arguments. */
-	public function bind_command( array $args ): void {
-		if ( count( $args ) !== 1 || ! is_readable( $args[0] ) ) {
-			\WP_CLI::error( 'Supply a readable store binding JSON file.' );
-		}
-		$input = json_decode( file_get_contents( $args[0] ), true );
-		$result = $this->bind( $input );
-		if ( is_wp_error( $result ) ) {
-			\WP_CLI::error( $result->get_error_message() );
-		}
-		\WP_CLI::success( 'Store bound. Payment activation is separate.' );
+	public function canonical_origin(): ?string {
+		$origin = get_option( 'spacefast_commerce_canonical_origin', '' );
+		return is_string( $origin ) && '' !== $origin ? $origin : null;
 	}
 
-	/** Root-only provisioning; this operation has no public REST entry point. */
-	public function bind( mixed $input ): true|\WP_Error {
-		if ( ! is_array( $input ) ) {
-			return new \WP_Error( 'binding_invalid', 'A store binding is required.' );
+	/** Absolute URL for a site-relative path, on the canonical origin when one is known (cron, WP-CLI, emails). */
+	public function url( string $path ): string {
+		$origin = $this->canonical_origin();
+		return null === $origin ? home_url( $path ) : $origin . '/' . ltrim( $path, '/' );
+	}
+
+	/** An https origin with no path, query or credentials, lowercased; or a refusal. */
+	public static function normalize_origin( string $origin ): string|\WP_Error {
+		$parts = wp_parse_url( $origin );
+		if ( ! is_array( $parts ) || 'https' !== ( $parts['scheme'] ?? '' ) || empty( $parts['host'] ) ||
+			isset( $parts['user'] ) || isset( $parts['pass'] ) || isset( $parts['query'] ) || isset( $parts['fragment'] ) ||
+			( isset( $parts['path'] ) && '/' !== $parts['path'] && '' !== $parts['path'] ) ) {
+			return Bundle::refuse( 'canonical-origin-invalid', 'The canonical origin must be an https origin with no path, query or credentials.' );
 		}
-		foreach ( array( 'space_id', 'store_id', 'environment', 'origin', 'currency', 'country', 'credential' ) as $field ) {
-			if ( ! isset( $input[$field] ) || ! is_string( $input[$field] ) || '' === $input[$field] ) {
-				return new \WP_Error( 'binding_invalid', 'Store binding fields are missing.' );
-			}
+		return 'https://' . strtolower( $parts['host'] ) . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' );
+	}
+
+	public function set_canonical_origin( string $origin ): true|\WP_Error {
+		$normalized = self::normalize_origin( $origin );
+		if ( is_wp_error( $normalized ) ) {
+			return $normalized;
 		}
-		$origin = wp_parse_url( $input['origin'] );
-		if (
-			! preg_match( '/^spc_[A-Za-z0-9]+$/', $input['space_id'] ) ||
-			! preg_match( '/^[A-Za-z0-9_-]{1,128}$/', $input['store_id'] ) ||
-			! in_array( $input['environment'], array( 'test', 'live' ), true ) ||
-			! preg_match( '/^[A-Za-z0-9_-]{32,256}$/D', $input['credential'] ) ||
-			! is_array( $origin ) || ! isset( $origin['host'], $origin['scheme'] ) ||
-			'https' !== $origin['scheme'] || ( isset( $origin['user'] ) || isset( $origin['pass'] ) ) ||
-			isset( $origin['query'] ) || isset( $origin['fragment'] ) ||
-			( isset( $origin['path'] ) && '' !== $origin['path'] && '/' !== $origin['path'] ) ||
-			! array_key_exists( $input['currency'], get_woocommerce_currencies() ) ||
-			! array_key_exists( $input['country'], WC()->countries->get_countries() )
-		) {
-			return new \WP_Error( 'binding_invalid', 'Store identity, origin, merchant location or credential is invalid.' );
-		}
-		$existing = $this->binding();
-		foreach ( array( 'space_id', 'store_id', 'environment' ) as $field ) {
-			if ( isset( $existing[$field] ) && $existing[$field] !== $input[$field] ) {
-				return new \WP_Error( 'store_already_bound', 'This installation belongs to another store or environment.' );
-			}
-		}
-		// Currency cannot change underneath native orders or an existing catalog.
-		if ( isset( $existing['currency'] ) && $existing['currency'] !== $input['currency'] ) {
-			return new \WP_Error( 'store_currency_conflict', 'An existing store cannot change currency.' );
-		}
-		$binding = array_intersect_key( $input, array_flip( array( 'space_id', 'store_id', 'environment', 'origin', 'currency', 'country' ) ) );
-		$binding['origin'] = rtrim( $binding['origin'], '/' );
-		$binding['credential_hash'] = hash( 'sha256', $input['credential'] );
-		if ( function_exists( 'spacefast_commerce_runtime_bind' ) ) {
-			if ( ! spacefast_commerce_runtime_bind( $binding ) ) {
-				return new \WP_Error( 'store_binding_failed', 'Protected store identity could not be saved.' );
-			}
-		} else {
-			update_option( 'spacefast_commerce_binding', $binding, false );
-		}
-		update_option( 'woocommerce_currency', $binding['currency'] );
-		update_option( 'woocommerce_default_country', $binding['country'] );
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
-		update_option( 'woocommerce_downloads_grant_access_after_payment', 'yes' );
-		update_option( 'woocommerce_file_download_method', 'force' );
-		update_option( 'woocommerce_downloads_redirect_fallback_allowed', 'no' );
+		update_option( 'spacefast_commerce_canonical_origin', $normalized, false );
 		return true;
 	}
 
-	/** Exact installation/environment binding; an order key never authenticates this boundary. */
-	public function authorize( \WP_REST_Request $request ): true|\WP_Error {
-		$binding = $this->binding();
-		$authorization = $request->get_header( 'Authorization' ) ?? '';
-		if ( ! preg_match( '/^Bearer ([A-Za-z0-9_-]{32,256})$/D', $authorization, $match ) ||
-			! isset( $binding['credential_hash'] ) ||
-			! hash_equals( $binding['credential_hash'], hash( 'sha256', $match[1] ) ) ) {
-			return new \WP_Error( 'store_unauthorized', 'Store authentication is required.', array( 'status' => 401 ) );
+	public function counter(): int {
+		return (int) get_option( 'spacefast_commerce_apply_counter', 0 );
+	}
+
+	/** The counter only ever grows; it is stamped before the first write of an apply. */
+	public function next_counter(): int {
+		$next = $this->counter() + 1;
+		update_option( 'spacefast_commerce_apply_counter', $next, false );
+		return $next;
+	}
+
+	public function store_hash(): ?string {
+		$hash = get_option( 'spacefast_commerce_store_hash', '' );
+		return is_string( $hash ) && '' !== $hash ? $hash : null;
+	}
+
+	/** Server-side MySQL named lock: two applies (or an apply and a mode switch) never interleave on one database. */
+	public function with_lock( callable $work, int $timeout = 30 ): mixed {
+		global $wpdb;
+		$lock = 'spacefast_commerce_' . substr( hash( 'sha256', $wpdb->prefix . DB_NAME ), 0, 32 );
+		if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', $lock, $timeout ) ) ) {
+			return new \WP_Error( 'apply-busy', 'Another store apply or mode change is running. Retry.', array( 'pointer' => null ) );
 		}
-		foreach ( array( 'space_id', 'store_id', 'environment' ) as $field ) {
-			if ( $request->get_header( 'X-Spacefast-' . str_replace( '_', '-', $field ) ) !== $binding[$field] ) {
-				return new \WP_Error( 'store_scope_mismatch', 'Store scope does not match this installation.', array( 'status' => 403 ) );
+		try {
+			// A waiter may have read these options before another process committed.
+			wp_cache_delete( 'alloptions', 'options' );
+			wp_cache_delete( 'notoptions', 'options' );
+			foreach ( array( 'spacefast_commerce_apply_counter', 'spacefast_commerce_store_hash', 'spacefast_commerce_mode', 'spacefast_commerce_canonical_origin' ) as $option ) {
+				wp_cache_delete( $option, 'options' );
 			}
+			return $work();
+		} finally {
+			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
 		}
-		return true;
 	}
 }

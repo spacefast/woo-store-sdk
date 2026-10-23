@@ -43,12 +43,13 @@ The Woo image needs a persistent `/var/www/html` volume and MySQL. It is not req
 runs the native CPT/HPOS contract. Remove the retained disposable project with
 `pnpm test:e2e:commerce:down`.
 
-For the Spacefast API's separately opted-in real Stripe relay contract,
-`node e2e/commerce-fixture.mjs prepare` prepares the store without running tests
-that rotate its credential. Supply `COMMERCE_STORE_BINDING_FILE` as a private
-JSON file containing the API-created store identity and credential. The native
-root preparation validates that binding. A unique `COMMERCE_FIXTURE_PROJECT`
+`node e2e/commerce-fixture.mjs prepare` prepares the store without running tests.
+The companion consumes a portable `store.json` bundle through WP-CLI and uses the
+installed native gateways. A unique `COMMERCE_FIXTURE_PROJECT`
 and `COMMERCE_HTTP_PORT=0 COMMERCE_MAIL_PORT=0` create an isolated project on
 dynamic local ports. `COMMERCE_FIXTURE_READY` reports its container and origins;
 `node e2e/commerce-fixture.mjs down` removes that named project and its volumes.
-The relay contract keeps Stripe platform secrets in the API process.
+Set `COMMERCE_ENGINE_ROOT` to a Spacefast `runtime/engine` directory to also prove
+the companion against the real engine's request principal and capability filters.
+See [the companion reference](plugin/spacefast-commerce/TECHNICAL.md) for commands,
+source-field ownership, modes, portable host setup and release packaging.

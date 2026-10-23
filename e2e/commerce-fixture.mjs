@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ if (process.argv[2] === 'down') {
 }
 const directory = mkdtempSync(path.join(os.tmpdir(), 'commerce-fixture-'));
 async function artifact(url, hash, filename) {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
   assert.equal(response.status, 200, `Could not fetch ${filename}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   assert.equal(createHash('sha256').update(bytes).digest('hex'), hash, `${filename} integrity mismatch`);
@@ -34,6 +34,14 @@ try {
     'https://downloads.wordpress.org/plugin/woocommerce.11.2.0.zip',
     '66e91b45b057b64c73d4521111cea5bdc78c4c89de8fa2ca4b18b9422706d722', 'woocommerce.zip',
   );
+  const dummy = await artifact(
+    'https://github.com/woocommerce/woocommerce-gateway-dummy/releases/download/2.0.0/woocommerce-gateway-dummy.zip',
+    '781b4d7031fc3f5acaad61ef542895248c8fab0407802d2996278b6a7722a802', 'woocommerce-gateway-dummy.zip',
+  );
+  const stripe = await artifact(
+    'https://downloads.wordpress.org/plugin/woocommerce-gateway-stripe.11.1.1.zip',
+    '420621d736a74d7a785f80b69aeed0cbe07f1a4810c013a2b86205423ebb994e', 'woocommerce-gateway-stripe.zip',
+  );
   compose('up', '-d', '--wait', '--wait-timeout', '180');
   const container = execFileSync('docker', [...composeArgs, 'ps', '-q', 'wordpress'], { cwd: root, encoding: 'utf8' }).trim();
   const publishedOrigin = (service, port) => `http://${execFileSync('docker', [...composeArgs, 'port', service, String(port)], { cwd: root, encoding: 'utf8' }).trim()}`;
@@ -43,6 +51,8 @@ try {
   const wp = (...args) => docker('exec', '--user', 'www-data', container, 'php', '/usr/local/bin/wp-cli.phar', ...args);
   docker('cp', wpCli, `${container}:/usr/local/bin/wp-cli.phar`);
   docker('cp', woo, `${container}:/tmp/woocommerce.zip`);
+  docker('cp', dummy, `${container}:/tmp/woocommerce-gateway-dummy.zip`);
+  docker('cp', stripe, `${container}:/tmp/woocommerce-gateway-stripe.zip`);
   docker('exec', container, 'sh', '-eu', '-c', `
     mkdir -p /var/www/commerce-private /var/www/html/wp-content/mu-plugins /var/www/html/wp-content/uploads
     chown www-data:www-data /var/www/commerce-private
@@ -62,21 +72,15 @@ try {
     wp('option', 'update', 'home', origin);
     wp('option', 'update', 'siteurl', origin);
   }
-  wp('plugin', 'install', '/tmp/woocommerce.zip', '--activate', '--force');
-  wp('plugin', 'activate', 'woo-storefront', 'spacefast-commerce');
-  const binding = path.join(directory, 'store.json');
-  const storeBinding = process.env.COMMERCE_STORE_BINDING_FILE
-    ? JSON.parse(readFileSync(process.env.COMMERCE_STORE_BINDING_FILE, 'utf8'))
-    : { space_id: 'spc_contract', store_id: 'contract', environment: 'test',
-      origin: 'https://contract.example.test', currency: 'USD', country: 'PL', credential: randomBytes(32).toString('hex') };
-  writeFileSync(binding, JSON.stringify(storeBinding), { mode: 0o600 });
-  docker('cp', binding, `${container}:/tmp/commerce-store.json`);
-  docker('exec', container, 'chown', 'www-data:www-data', '/tmp/commerce-store.json');
-  try {
-    wp('spacefast-commerce', 'prepare', '/tmp/commerce-store.json');
-  } finally {
-    docker('exec', container, 'rm', '-f', '/tmp/commerce-store.json');
+  const hasWoo = spawnSync('docker', ['exec', '--user', 'www-data', container, 'php', '/usr/local/bin/wp-cli.phar', 'plugin', 'is-installed', 'woocommerce'], { stdio: 'pipe' });
+  if (hasWoo.status === 1) {
+    wp('--skip-plugins', '--require=/var/www/html/wp-content/plugins/spacefast-commerce/cli.php', 'spacefast-commerce', 'preflight');
+  } else {
+    assert.equal(hasWoo.status, 0, 'Woo installation check failed');
   }
+  wp('plugin', 'install', '/tmp/woocommerce.zip', '/tmp/woocommerce-gateway-dummy.zip', '/tmp/woocommerce-gateway-stripe.zip', '--activate', '--force');
+  wp('plugin', 'activate', 'woo-storefront', 'spacefast-commerce');
+  wp('spacefast-commerce', 'setup');
   wp('rewrite', 'structure', '/%postname%/');
   wp('rewrite', 'flush', '--hard');
   docker('cp', 'e2e/fixtures/commerce-mail.php', `${container}:/var/www/html/wp-content/mu-plugins/commerce-test-mail.php`);

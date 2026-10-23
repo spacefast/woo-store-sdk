@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "merchant": {
+    "name": "Quiet Press",
+    "brand": {
+      "logo": {
+        "path": "public/images/logo.png",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "size": 0
+      },
+      "accent": "#1f6f5c"
+    },
+    "country": "PL",
+    "currency": "eur",
+    "downloads": {
+      "limit": 5,
+      "expiryDays": 30
+    }
+  },
+  "shipping": {
+    "countries": [
+      "PL",
+      "DE"
+    ],
+    "rate": {
+      "amountMinor": 1500
+    },
+    "policy": "Ships within 3 working days."
+  },
+  "products": [
+    {
+      "key": "field-guide-ebook",
+      "kind": "digital",
+      "name": "The Field Guide (ebook)",
+      "summary": "PDF and EPUB, 180 pages.",
+      "description": "A practical guide to the field.\n\nSecond paragraph.",
+      "price": {
+        "amountMinor": 1200,
+        "currency": "eur"
+      },
+      "image": {
+        "url": "https://example.com/ebook-cover.jpg"
+      },
+      "page": null,
+      "asset": {
+        "path": "sell/downloads/field-guide.zip",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "size": 2048
+      },
+      "active": true,
+      "stock": null
+    },
+    {
+      "key": "field-guide-print",
+      "kind": "physical",
+      "name": "The Field Guide (paperback)",
+      "summary": null,
+      "description": null,
+      "price": {
+        "amountMinor": 2900,
+        "currency": "eur"
+      },
+      "image": {
+        "path": "public/images/paperback.jpg",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "size": 4096
+      },
+      "page": "/books/field-guide/",
+      "asset": null,
+      "active": true,
+      "stock": {
+        "track": true,
+        "initial": 50
+      }
+    }
+  ],
+  "emails": {
+    "customer_completed_order": {
+      "html": "<!doctype html><html><head><meta charset=\"utf-8\"><title>Order complete</title></head><body><h1><sf-email-heading></sf-email-heading></h1><p>Thanks for buying from <sf-store-name></sf-store-name>.</p><img src=\"/images/logo.png\" alt=\"\"><sf-order-details></sf-order-details><sf-customer-details></sf-customer-details><sf-additional-content></sf-additional-content><p><sf-store-link></sf-store-link></p></body></html>",
+      "sha256": "9ad97e050508e6a8ad36f0cf26db9da614ad3e469288144375a1a60f07df33f6"
+    }
+  }
+}
