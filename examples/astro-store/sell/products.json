@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 2,
+  "products": [
+    {
+      "key": "field-guide-ebook",
+      "name": "The Field Guide (ebook)",
+      "summary": "A small guide to noticing more outdoors. Downloadable text edition.",
+      "description": "Take the slower path. A pocket collection of observations, walks and things to look for.",
+      "price": { "amountMinor": 1200, "currency": "eur" },
+      "kind": "digital",
+      "asset": "assets/field-guide.txt",
+      "active": true
+    },
+    {
+      "key": "field-guide-print",
+      "name": "The Field Guide (paperback)",
+      "summary": "The same quiet companion, printed on recycled paper.",
+      "description": "A book for your bag, a pencil in the margin and a little more time outside.",
+      "price": { "amountMinor": 2900, "currency": "eur" },
+      "kind": "physical",
+      "stock": { "track": true, "initial": 50 },
+      "active": true
+    }
+  ]
+}

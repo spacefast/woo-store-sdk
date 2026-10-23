@@ -2,7 +2,8 @@
 # Seeds the Astro proof catalog (examples/astro-store/sell/products.json) into a
 # running deploy/woo container, the way the companion's apply would: SKU = key,
 # an EUR store, a flat-rate zone, cash on delivery for headless order placement.
-# This stands in for `wp spacefast-commerce apply` until workstream A lands.
+# This seeds the plain-Woo transport fixture. For the native Spacefast path,
+# build the declaration and use `wp spacefast-commerce apply` instead.
 #
 # Usage: e2e/seed-proof-store.sh [container]   (default woo-ba-wp)
 set -eu

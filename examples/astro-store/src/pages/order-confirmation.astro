@@ -1,0 +1,5 @@
+---
+import Shop from '../layouts/Shop.astro'
+import Store from '../store'
+---
+<Shop title="Your order · Quiet Press"><section class="page-title"><p class="eyebrow">Good things are on their way.</p><h1>Your order.</h1></section><Store page="confirmation" client:only="react"><p slot="fallback" role="status">Opening your order…</p></Store></Shop>

@@ -1,0 +1,345 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Display&display=swap");
+
+:root {
+  font-family: "DM Sans", sans-serif;
+  color: #243e32;
+  background: #f8f7ef;
+  line-height: 1.55;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  --green: #254d3d;
+  --muted: #667265;
+  --rule: #d8ddd0;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+a {
+  color: inherit;
+  text-underline-offset: 4px;
+}
+a:hover {
+  opacity: 0.75;
+}
+button,
+input {
+  font: inherit;
+}
+button,
+.button {
+  display: inline-block;
+  border: 0;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+  padding: 14px 22px;
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: 600;
+}
+button:hover,
+.button:hover {
+  background: #193a2c;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #a0b59a;
+  outline-offset: 4px;
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+ul {
+  padding: 0;
+  list-style: none;
+}
+h1 {
+  font-family: "Libre Caslon Display", Georgia, serif;
+  font-size: clamp(3.8rem, 9vw, 7rem);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+}
+h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+main,
+.site-header,
+footer {
+  width: min(1080px, calc(100% - 48px));
+  margin: auto;
+}
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30px 0;
+  border-bottom: 1px solid var(--rule);
+  gap: 20px;
+}
+.wordmark {
+  font-family: "Libre Caslon Display", Georgia, serif;
+  font-size: 2.1rem;
+  text-decoration: none;
+  line-height: 1;
+}
+.wordmark span {
+  display: block;
+  font:
+    400 0.7rem "DM Sans",
+    sans-serif;
+  margin-top: 9px;
+  letter-spacing: 0.02em;
+}
+.site-header > a:last-child {
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.intro {
+  text-align: center;
+  padding: 80px 0 58px;
+}
+.intro > p:last-child {
+  margin-top: 24px;
+  color: var(--muted);
+}
+.eyebrow {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 22px;
+}
+.catalog {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 42px;
+}
+.product > p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 12px 0 22px;
+  max-width: 38ch;
+}
+.product-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 18px;
+  margin-top: 22px;
+}
+.product-heading > p {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.book-scene {
+  min-height: 390px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+  background: #dfe6d9;
+  border-radius: 4px;
+}
+.book-scene-print {
+  background: #e9e1d1;
+}
+.book-cover {
+  width: 190px;
+  min-height: 265px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  justify-content: space-between;
+  background: #344d3a;
+  color: #f5e6b4;
+  transform: rotate(-7deg);
+  box-shadow:
+    8px 12px 0 #162e2220,
+    18px 25px 30px #20362820;
+  border-left: 7px solid #28412f;
+}
+.book-scene-print .book-cover {
+  background: #c98751;
+  color: #283f2c;
+  transform: rotate(6deg);
+  border-left-color: #b27342;
+}
+.book-cover strong {
+  font-family: "Libre Caslon Display", Georgia, serif;
+  font-size: 3.2rem;
+  line-height: 0.9;
+  font-weight: 400;
+}
+.book-cover span {
+  font-size: 0.65rem;
+  line-height: 1.3;
+}
+.edition {
+  position: absolute;
+  bottom: 18px;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: #465847;
+}
+.catalog-feedback {
+  grid-column: 1/-1;
+}
+.notice {
+  background: #e6ebdb;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  font-size: 0.9rem;
+}
+.page-title {
+  padding: 64px 0 40px;
+}
+.page-title h1 {
+  font-size: clamp(3.5rem, 8vw, 5.5rem);
+  margin-top: 24px;
+}
+.bag,
+.confirmation {
+  max-width: 760px;
+  padding-bottom: 50px;
+}
+.bag-items {
+  margin: 0 0 26px;
+}
+.bag-items li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  border-bottom: 1px solid var(--rule);
+  padding: 24px 0;
+}
+.bag-items li p {
+  color: var(--muted);
+  margin-top: 8px;
+}
+.quantity {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.quantity button {
+  min-width: 36px;
+  padding: 4px 10px;
+}
+.quantity span {
+  font-variant-numeric: tabular-nums;
+}
+.text-button {
+  background: transparent !important;
+  color: var(--green);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  padding: 5px !important;
+}
+.bag-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.bag > p {
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+.confirmation form {
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 16px;
+}
+.confirmation input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--rule);
+}
+.confirmation > p {
+  margin: 18px 0;
+}
+.confirmation .notice {
+  margin-top: 20px;
+}
+footer {
+  margin-top: 100px;
+  padding: 30px 0 42px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+footer a {
+  white-space: nowrap;
+}
+@media (max-width: 650px) {
+  main,
+  .site-header,
+  footer {
+    width: calc(100% - 36px);
+  }
+  .intro {
+    padding: 56px 0 40px;
+  }
+  .intro > p:last-child {
+    max-width: 28ch;
+    margin: 22px auto 0;
+  }
+  .catalog {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .book-scene {
+    min-height: 340px;
+  }
+  .product-heading h2 {
+    font-size: 1rem;
+  }
+  .bag-items li {
+    align-items: start;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .confirmation .bag-items li {
+    flex-direction: row;
+  }
+  .quantity {
+    width: 100%;
+  }
+  .quantity .text-button {
+    margin-left: auto;
+  }
+  footer {
+    margin-top: 60px;
+    flex-wrap: wrap;
+  }
+  footer p {
+    order: 3;
+    width: 100%;
+  }
+  .page-title {
+    padding-top: 44px;
+  }
+}

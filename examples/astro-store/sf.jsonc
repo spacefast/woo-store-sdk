@@ -1,0 +1,19 @@
+{
+  "build": { "buildCommand": "pnpm --filter woo-astro-store build", "outputDirectory": "dist" },
+  "meta": { "title": "Quiet Press" },
+  "access": "public",
+  "sell": {
+    "backend": "woocommerce",
+    "products": "sell/products.json",
+    "merchant": {
+      "name": "Quiet Press",
+      "brand": { "accent": "#254d3d" },
+      "country": "PL",
+      "currency": "eur",
+    },
+    "shipping": { "countries": ["PL", "DE", "CZ", "US"], "rate": { "amountMinor": 1500 } },
+    "emails": {
+      "customer_processing_order": { "template": "_emails/customer-processing-order.html" },
+    },
+  },
+}
