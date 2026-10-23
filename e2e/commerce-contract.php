@@ -235,6 +235,32 @@ commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $o
 commerce_check( $replacement === file_get_contents( $after['file']['file'] ), 'Previous buyer did not receive the current source asset.' );
 commerce_check( 'Revised field guide' === current( $order->get_items() )->get_name(), 'Apply rewrote a purchased order line.' );
 
+// Query failure is not an empty store, for either native order datastore.
+global $wpdb;
+$order_count_before_fault = SpacefastCommerce\Orders::count();
+$counter_before_fault = $plugin->store->counter();
+$hash_before_fault = $plugin->store->store_hash();
+$order_table = Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled() ? $wpdb->prefix . 'wc_orders' : $wpdb->posts;
+$held_table = $order_table . '_retention_' . substr( str_replace( '-', '', wp_generate_uuid4() ), 0, 10 );
+$suppress_errors_before_fault = $wpdb->suppress_errors( true );
+wp_cache_flush();
+commerce_check( false !== $wpdb->query( $wpdb->prepare( 'RENAME TABLE %i TO %i', $order_table, $held_table ) ), 'Could not isolate the disposable order table.' );
+try {
+	$unavailable_orders = SpacefastCommerce\Orders::has_orders();
+	commerce_check( is_wp_error( $unavailable_orders ) && 'orders-unavailable' === $unavailable_orders->get_error_code(), 'Unavailable order history was reported as empty.' );
+	$unavailable_status = $plugin->provisioning->status();
+	commerce_check( is_wp_error( $unavailable_status ) && 'orders-unavailable' === $unavailable_status->get_error_code(), 'Status advertised a zero-order receipt during a database failure.' );
+	$unavailable_apply = $plugin->catalog->apply( $directory, $options );
+	commerce_check( is_wp_error( $unavailable_apply ) && 'orders-unavailable' === $unavailable_apply->get_error_code(), 'Catalog apply ignored unavailable order history.' );
+	commerce_check( $counter_before_fault === $plugin->store->counter() && $hash_before_fault === $plugin->store->store_hash(), 'An unavailable history refusal changed the native catalog receipt.' );
+} finally {
+	$restored_table = $wpdb->query( $wpdb->prepare( 'RENAME TABLE %i TO %i', $held_table, $order_table ) );
+	$wpdb->suppress_errors( $suppress_errors_before_fault );
+	wp_cache_flush();
+	commerce_check( false !== $restored_table, 'Restore the disposable fixture order table.' );
+}
+commerce_check( $order_count_before_fault === SpacefastCommerce\Orders::count(), 'Order history did not recover after the database was restored.' );
+
 // A move away from Woo may stop sales, but it cannot erase purchased entitlements.
 $native_before_disable = array( 'hash' => $plugin->store->store_hash(), 'counter' => $plugin->store->counter(), 'mode' => $plugin->store->mode(), 'orders' => SpacefastCommerce\Orders::count(), 'stock' => wc_get_product( $print_id )->get_stock_quantity() );
 $unmanaged = new WC_Product_Simple();

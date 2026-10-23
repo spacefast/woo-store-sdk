@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.2
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.2.1
+Stable tag: 0.2.2
 License: GPLv2 or later
 
 Source-managed WooCommerce stores with portable bundles, native checkout,
@@ -71,6 +71,10 @@ packaging contracts. Provider installation, public browser checkout and live
 merchant payments have separate integration gates.
 
 == Changelog ==
+
+= 0.2.2 =
+* Refuse unavailable native order counts instead of reporting an empty store.
+* Expose the native order-retention fact for safe permanent-deletion checks.
 
 = 0.2.1 =
 * Disable managed sales while preserving orders, stock and buyer grants.

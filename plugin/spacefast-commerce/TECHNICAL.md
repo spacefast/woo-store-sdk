@@ -65,6 +65,11 @@ Bytes live outside the web root; WooCommerce authorizes and transfers them.
 
 ## Modes and emails
 
+Order facts are read through Woo's native datastore with query caching disabled.
+A failed count returns `orders-unavailable`; status and catalog preflight preserve
+that refusal. `Orders::has_orders()` exposes the qualified retention fact for the
+hosting runtime. Unavailable history cannot authorize permanent deletion.
+
 Test mode enables the dummy gateway and displays test checkout/email banners. A public test
 store can deliver real downloads through a free dummy payment. Live mode requires the Stripe
 gateway to be enabled and removes both dummy gateway and Checkout Block registration on every

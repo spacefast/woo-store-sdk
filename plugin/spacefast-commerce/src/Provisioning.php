@@ -33,7 +33,11 @@ final class Provisioning {
 		return array( 'ok' => true, 'mode' => $this->plugin->store->mode() );
 	}
 
-	public function status(): array {
+	public function status(): array|\WP_Error {
+		$order_count = Orders::count();
+		if ( is_wp_error( $order_count ) ) {
+			return $order_count;
+		}
 		require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		$versions = array( 'wordpress' => get_bloginfo( 'version' ) );
 		foreach ( get_plugins() as $file => $data ) {
@@ -46,7 +50,7 @@ final class Provisioning {
 			'ok' => true,
 			'mode' => $this->plugin->store->mode(),
 			'stripeEnabled' => $this->plugin->mode->stripe_enabled(),
-			'orderCount' => Orders::count(),
+			'orderCount' => $order_count,
 			'storeHash' => $this->plugin->store->store_hash(),
 			'counter' => $this->plugin->store->counter(),
 			'canonicalOrigin' => $this->plugin->store->canonical_origin(),

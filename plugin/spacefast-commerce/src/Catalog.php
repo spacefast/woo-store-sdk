@@ -79,6 +79,10 @@ final class Catalog {
 		$store = $bundle->store;
 		$merchant = $store['merchant'];
 		$current = $this->current();
+		$order_count = Orders::count();
+		if ( is_wp_error( $order_count ) ) {
+			return $order_count;
+		}
 		$desired = array();
 		foreach ( $store['products'] as $index => $product ) {
 			$desired[] = Planner::desired( $product, $index, $merchant );
@@ -90,7 +94,7 @@ final class Catalog {
 			$options['baseline'],
 			$merchant['currency'],
 			get_woocommerce_currency(),
-			array() !== $current || Orders::count() > 0,
+			array() !== $current || $order_count > 0,
 		);
 		if ( is_wp_error( $plan ) ) {
 			return $plan;
