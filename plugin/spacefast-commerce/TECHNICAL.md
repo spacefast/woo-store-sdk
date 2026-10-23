@@ -21,6 +21,7 @@ After activating the dependencies and companion, run:
 ```sh
 wp spacefast-commerce setup
 wp spacefast-commerce apply /path/to/bundle --canonical-origin=https://shop.example
+wp spacefast-commerce disable
 wp spacefast-commerce status
 wp spacefast-commerce mode test
 wp spacefast-commerce mode live
@@ -36,7 +37,7 @@ held files can be omitted. No store identity, credentials or test/live mode belo
 
 Apply refuses removals, SKU conflicts, currency changes under products/orders, invalid images,
 invalid email templates and missing/corrupt files before changing the catalog or counter.
-A MySQL named lock serializes apply and mode changes. An infrastructure failure during writes
+A MySQL named lock serializes apply, disable and mode changes. An infrastructure failure during writes
 requires retrying the same bundle; apply repairs native drift and updates stable identities.
 
 Without a baseline flag, every previously managed product is in the removal baseline.
@@ -45,6 +46,12 @@ A forward deploy must keep its key and can set `active: false` to stop selling i
 pass `--baseline=key1,key2` for the actual live version or `--no-live-catalog` when none is
 live. Leftovers outside both baseline and target are deactivated. An empty `--baseline=` is
 an error. This distinguishes failed activation leftovers from intentional product removals.
+
+`disable` drafts every managed product and returns `storeHash: null` with the next
+counter. It preserves unmanaged products, orders, stock, download grants and payment
+mode. A later apply restores the same product identities. An interrupted disable
+returns `apply-failed`; its advanced counter invalidates the last completed hash
+until a retry finishes. Post-write apply faults also return `apply-failed`.
 
 Source fields are protected in native product editing, REST, store settings and the declared
 shipping zone. Other shipping zones remain editable. `stock.initial` seeds new products only;

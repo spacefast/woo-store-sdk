@@ -13,6 +13,7 @@ final class Cli {
 			'preflight' => array( self::class, 'preflight' ),
 			'setup' => array( self::class, 'setup' ),
 			'apply' => array( self::class, 'apply' ),
+			'disable' => array( self::class, 'disable' ),
 			'mode' => array( self::class, 'mode' ),
 			'status' => array( self::class, 'status' ),
 			'email render' => array( self::class, 'email_render' ),
@@ -141,6 +142,12 @@ final class Cli {
 			return;
 		}
 		self::emit( $plugin->mode->set( $mode, $assoc['canonical-origin'] ?? null ) );
+	}
+
+	/** Disable managed products when the production version has no store. Retain native order history. */
+	public static function disable(): void {
+		$plugin = self::plugin();
+		self::emit( is_wp_error( $plugin ) ? $plugin : $plugin->catalog->disable() );
 	}
 
 	public static function status(): void {

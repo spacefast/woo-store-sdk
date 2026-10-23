@@ -143,6 +143,10 @@ for (const storage of ['no', 'yes']) {
   wp('eval-file', '/tmp/commerce-contract.php', 'after-live');
   assert.deepEqual((await mailbox()).map((message) => message.ID), beforeMail.map((message) => message.ID), 'Go-live cleanup sent customer mail');
   assert.equal((await request(downloadUrl)).status, 404, 'Cancelled dummy order still downloads through HTTP');
+  const disabled = receipt(['disable']);
+  assert.equal(disabled.storeHash, null);
+  assert.equal(receipt(['status']).storeHash, null);
+  assert.equal(receipt(['status']).mode, 'live');
   console.log(`PASS: native ${storage === 'yes' ? 'HPOS' : 'CPT'} HTTP Store API, authorized delivery, SMTP, live cleanup and retry`);
 }
 if (process.env.COMMERCE_ENGINE_ROOT) {

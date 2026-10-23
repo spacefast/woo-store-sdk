@@ -234,6 +234,32 @@ $after = current( wc_get_order( $order->get_id() )->get_downloadable_items() );
 commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ) && $download['download_id'] === $after['download_id'] && PrivateFiles::download_id( $digital['key'] ) === $after['download_id'], 'Asset replacement changed previous buyer grants.' );
 commerce_check( $replacement === file_get_contents( $after['file']['file'] ), 'Previous buyer did not receive the current source asset.' );
 commerce_check( 'Revised field guide' === current( $order->get_items() )->get_name(), 'Apply rewrote a purchased order line.' );
+
+// A move away from Woo may stop sales, but it cannot erase purchased entitlements.
+$native_before_disable = array( 'hash' => $plugin->store->store_hash(), 'counter' => $plugin->store->counter(), 'mode' => $plugin->store->mode(), 'orders' => SpacefastCommerce\Orders::count(), 'stock' => wc_get_product( $print_id )->get_stock_quantity() );
+$unmanaged = new WC_Product_Simple();
+$unmanaged->set_name( 'Native product outside the source' );
+$unmanaged->set_status( 'publish' );
+$unmanaged->save();
+$interrupt_disable = static function ( WC_Product $product ) use ( $print_id ): void {
+	if ( $product->get_id() === $print_id ) {
+		throw new RuntimeException( 'Deliberately interrupted native disable.' );
+	}
+};
+add_action( 'woocommerce_before_product_object_save', $interrupt_disable, 99 );
+$interrupted_disable = $plugin->catalog->disable();
+remove_action( 'woocommerce_before_product_object_save', $interrupt_disable, 99 );
+commerce_check( is_wp_error( $interrupted_disable ) && 'apply-failed' === $interrupted_disable->get_error_code(), 'An interrupted disable was not retryable.' );
+commerce_check( $native_before_disable['counter'] + 1 === $plugin->store->counter() && $native_before_disable['hash'] === $plugin->store->store_hash(), 'Partial disable did not invalidate the counter while preserving the last completed hash.' );
+$disabled = commerce_result( $plugin->catalog->disable() );
+commerce_check( null === $disabled['storeHash'] && $native_before_disable['counter'] + 2 === $disabled['counter'], 'Disable receipt did not settle the null catalog.' );
+commerce_check( 'draft' === wc_get_product( $book_id )->get_status() && 'draft' === wc_get_product( $print_id )->get_status() && 'publish' === wc_get_product( $unmanaged->get_id() )->get_status(), 'Disable changed an unmanaged product or left a managed product for sale.' );
+commerce_check( $native_before_disable['mode'] === $plugin->store->mode() && $native_before_disable['orders'] === SpacefastCommerce\Orders::count() && $native_before_disable['stock'] === wc_get_product( $print_id )->get_stock_quantity(), 'Disable changed mode, stock or native order history.' );
+commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ) && 1 === count( wc_get_order( $order->get_id() )->get_downloadable_items() ), 'Disable revoked a previous buyer grant.' );
+commerce_result( $plugin->catalog->apply( commerce_bundle( $store, array( $replacement ) ), $options ) );
+commerce_check( $book_id === wc_get_product_id_by_sku( $digital['key'] ) && 'publish' === wc_get_product( $book_id )->get_status(), 'Re-enable did not restore the managed product in place.' );
+$unmanaged->delete( true );
+
 unset( $_SERVER['HTTP_HOST'] );
 foreach ( array_keys( $store['emails'] ) as $email_id ) {
 	$rendered = commerce_result( $plugin->emails->render_order( $order->get_id(), $email_id ) );

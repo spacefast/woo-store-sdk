@@ -31,6 +31,40 @@ final class Catalog {
 		} );
 	}
 
+	/** Removing the store from a version disables sales, while native orders and buyer grants remain. */
+	public function disable(): array|\WP_Error {
+		return $this->store->with_lock( function (): array|\WP_Error {
+			$current = $this->current();
+			$counter = $this->store->next_counter();
+			$changes = $this->managed->apply( function () use ( $current ): array|\WP_Error {
+				$changes = array();
+				foreach ( $current as $native ) {
+					$product = wc_get_product( $native['id'] );
+					if ( ! $product ) {
+						return Bundle::refuse( 'apply-failed', 'A managed product disappeared while disabling the store. Retry.', null, $native['key'] );
+					}
+					$action = 'unchanged';
+					if ( 'draft' !== $product->get_status( 'edit' ) ) {
+						try {
+							$product->set_status( 'draft' );
+							$product->save();
+						} catch ( \Exception $error ) {
+							return Bundle::refuse( 'apply-failed', 'The managed product was not disabled: ' . $error->getMessage() . ' Retry.', null, $native['key'] );
+						}
+						$action = 'deactivated';
+					}
+					$changes[] = array( 'key' => $native['key'], 'action' => $action );
+				}
+				return $changes;
+			} );
+			if ( is_wp_error( $changes ) ) {
+				return $changes;
+			}
+			delete_option( 'spacefast_commerce_store_hash' );
+			return array( 'ok' => true, 'counter' => $counter, 'storeHash' => null, 'changes' => $changes, 'warnings' => array() );
+		} );
+	}
+
 	private function apply_locked( string $directory, array $options ): array|\WP_Error {
 		if ( null !== $options['canonical_origin'] ) {
 			$origin = Store::normalize_origin( $options['canonical_origin'] );
@@ -94,7 +128,8 @@ final class Catalog {
 			return true;
 		} );
 		if ( is_wp_error( $written ) ) {
-			return $written;
+			$data = $written->get_error_data();
+			return Bundle::refuse( 'apply-failed', $written->get_error_message() . ' Retry the apply.', is_array( $data ) ? ( $data['pointer'] ?? null ) : null, is_array( $data ) ? ( $data['key'] ?? null ) : null );
 		}
 		update_option( 'spacefast_commerce_store_hash', $bundle->hash, false );
 		return array(

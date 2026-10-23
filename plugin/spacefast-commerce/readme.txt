@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.2
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.2.0
+Stable tag: 0.2.1
 License: GPLv2 or later
 
 Source-managed WooCommerce stores with portable bundles, native checkout,
@@ -71,6 +71,10 @@ packaging contracts. Provider installation, public browser checkout and live
 merchant payments have separate integration gates.
 
 == Changelog ==
+
+= 0.2.1 =
+* Disable managed sales while preserving orders, stock and buyer grants.
+* Report post-write apply faults as retryable failures.
 
 = 0.2.0 =
 * Reconcile portable source bundles through serialized WP-CLI apply.
