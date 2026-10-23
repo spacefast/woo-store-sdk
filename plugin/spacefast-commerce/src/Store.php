@@ -83,6 +83,32 @@ final class Store {
 		return is_string( $hash ) && '' !== $hash ? $hash : null;
 	}
 
+	/** Call only inside with_lock: native processes reject late control-plane writes. */
+	public function accept_command( ?int $generation, ?int $command_generation ): true|\WP_Error {
+		$mode_generation = filter_var( get_option( 'spacefast_commerce_mode_generation', 0 ), FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 0 ) ) );
+		$native_generation = filter_var( get_option( 'spacefast_commerce_command_generation', 0 ), FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 0 ) ) );
+		if ( false === $mode_generation || false === $native_generation ) {
+			return Bundle::refuse( 'mode-unavailable', 'The store mode fence could not be read. Retry when the store database is available.' );
+		}
+		if ( null === $generation || null === $command_generation ) {
+			if ( null !== $generation || null !== $command_generation || $mode_generation > 0 || $native_generation > 0 ) {
+				return Bundle::refuse( 'mode-superseded', 'This store requires a current control-plane mode request.' );
+			}
+		} else {
+			if ( $generation < $mode_generation || $command_generation < $native_generation ) {
+				return Bundle::refuse( 'mode-superseded', 'A newer mode or canonical-origin request superseded this command.' );
+			}
+			// Retain the fence even if cleanup fails after this point. A late
+			// SSH process must never undo the newer request on its next lock.
+			update_option( 'spacefast_commerce_mode_generation', $generation, false );
+			update_option( 'spacefast_commerce_command_generation', $command_generation, false );
+			if ( $generation !== (int) get_option( 'spacefast_commerce_mode_generation' ) || $command_generation !== (int) get_option( 'spacefast_commerce_command_generation' ) ) {
+				return Bundle::refuse( 'mode-unavailable', 'The store mode fence could not be saved. Retry when the store database is available.' );
+			}
+		}
+		return true;
+	}
+
 	/** Server-side MySQL named lock: two applies (or an apply and a mode switch) never interleave on one database. */
 	public function with_lock( callable $work, int $timeout = 30 ): mixed {
 		global $wpdb;
@@ -94,7 +120,7 @@ final class Store {
 			// A waiter may have read these options before another process committed.
 			wp_cache_delete( 'alloptions', 'options' );
 			wp_cache_delete( 'notoptions', 'options' );
-			foreach ( array( 'spacefast_commerce_apply_counter', 'spacefast_commerce_store_hash', 'spacefast_commerce_mode', 'spacefast_commerce_canonical_origin' ) as $option ) {
+			foreach ( array( 'spacefast_commerce_apply_counter', 'spacefast_commerce_store_hash', 'spacefast_commerce_mode', 'spacefast_commerce_canonical_origin', 'spacefast_commerce_mode_generation', 'spacefast_commerce_command_generation' ) as $option ) {
 				wp_cache_delete( $option, 'options' );
 			}
 			return $work();

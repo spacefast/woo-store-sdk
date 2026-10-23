@@ -23,6 +23,17 @@ final class Cli {
 		}
 	}
 
+	private static function generations( array $assoc ): array|\WP_Error {
+		$generation = $assoc['generation'] ?? null;
+		$command_generation = $assoc['command-generation'] ?? null;
+		foreach ( array( $generation, $command_generation ) as $value ) {
+			if ( null !== $value && false === filter_var( $value, FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 0 ) ) ) ) {
+				return Bundle::refuse( 'mode-generation-invalid', 'Command generations must be non-negative integers.' );
+			}
+		}
+		return array( 'generation' => null === $generation ? null : (int) $generation, 'command_generation' => null === $command_generation ? null : (int) $command_generation );
+	}
+
 	private static function emit( array|\WP_Error $result ): void {
 		if ( is_wp_error( $result ) ) {
 			$data = $result->get_error_data();
@@ -74,6 +85,12 @@ final class Cli {
 	 *
 	 * [--canonical-origin=<origin>]
 	 * : The store's production origin, used for URLs generated without a request.
+	 *
+	 * [--generation=<generation>]
+	 * : The control-plane mode generation.
+	 *
+	 * [--command-generation=<generation>]
+	 * : The control-plane native command generation.
 	 */
 	public static function apply( array $args, array $assoc ): void {
 		$plugin = self::plugin();
@@ -118,7 +135,12 @@ final class Cli {
 				return;
 			}
 		}
-		self::emit( $plugin->catalog->apply( $args[0] ?? '', array( 'origin' => $origin, 'baseline' => $baseline, 'canonical_origin' => $canonical ) ) );
+		$generations = self::generations( $assoc );
+		if ( is_wp_error( $generations ) ) {
+			self::emit( $generations );
+			return;
+		}
+		self::emit( $plugin->catalog->apply( $args[0] ?? '', array_merge( $generations, array( 'origin' => $origin, 'baseline' => $baseline, 'canonical_origin' => $canonical ) ) ) );
 	}
 
 	/**
@@ -129,6 +151,12 @@ final class Cli {
 	 *
 	 * [--canonical-origin=<origin>]
 	 * : The store's production origin.
+	 *
+	 * [--generation=<generation>]
+	 * : The control-plane mode generation.
+	 *
+	 * [--command-generation=<generation>]
+	 * : The control-plane native command generation.
 	 */
 	public static function mode( array $args, array $assoc ): void {
 		$plugin = self::plugin();
@@ -141,13 +169,29 @@ final class Cli {
 			self::emit( Bundle::refuse( 'mode-invalid', 'Mode is test or live.' ) );
 			return;
 		}
-		self::emit( $plugin->mode->set( $mode, $assoc['canonical-origin'] ?? null ) );
+		$generations = self::generations( $assoc );
+		if ( is_wp_error( $generations ) ) {
+			self::emit( $generations );
+			return;
+		}
+		self::emit( $plugin->mode->set( $mode, $assoc['canonical-origin'] ?? null, $generations['generation'], $generations['command_generation'] ) );
 	}
 
-	/** Disable managed products when the production version has no store. Retain native order history. */
-	public static function disable(): void {
+	/**
+	 * Disable managed products. Retain native order history.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--generation=<generation>]
+	 * : The control-plane mode generation.
+	 *
+	 * [--command-generation=<generation>]
+	 * : The control-plane native command generation.
+	 */
+	public static function disable( array $args, array $assoc ): void {
 		$plugin = self::plugin();
-		self::emit( is_wp_error( $plugin ) ? $plugin : $plugin->catalog->disable() );
+		$generations = self::generations( $assoc );
+		self::emit( is_wp_error( $plugin ) ? $plugin : ( is_wp_error( $generations ) ? $generations : $plugin->catalog->disable( $generations['generation'], $generations['command_generation'] ) ) );
 	}
 
 	public static function status(): void {

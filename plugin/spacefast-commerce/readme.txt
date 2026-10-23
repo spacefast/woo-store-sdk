@@ -2,7 +2,7 @@
 Requires at least: 7.0
 Requires PHP: 8.2
 Requires Plugins: woocommerce, woo-storefront
-Stable tag: 0.2.3
+Stable tag: 0.2.4
 License: GPLv2 or later
 
 Source-managed WooCommerce stores with portable bundles, native checkout,
@@ -72,7 +72,7 @@ merchant payments have separate integration gates.
 
 == Changelog ==
 
-= 0.2.3 =
+= 0.2.4 =
 * Refuse unavailable native order counts instead of reporting an empty store.
 * Expose the native order-retention fact for safe permanent-deletion checks.
 

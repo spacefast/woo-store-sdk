@@ -76,14 +76,18 @@ final class Mode {
 		return $gateway instanceof \WC_Payment_Gateway && 'yes' === $gateway->enabled;
 	}
 
-	public function set( string $mode, ?string $canonical_origin = null ): array|\WP_Error {
+	public function set( string $mode, ?string $canonical_origin = null, ?int $generation = null, ?int $command_generation = null ): array|\WP_Error {
 		if ( null !== $canonical_origin ) {
 			$canonical_origin = Store::normalize_origin( $canonical_origin );
 			if ( is_wp_error( $canonical_origin ) ) {
 				return $canonical_origin;
 			}
 		}
-		return $this->store->with_lock( function () use ( $mode, $canonical_origin ): array|\WP_Error {
+		return $this->store->with_lock( function () use ( $mode, $canonical_origin, $generation, $command_generation ): array|\WP_Error {
+			$fence = $this->store->accept_command( $generation, $command_generation );
+			if ( is_wp_error( $fence ) ) {
+				return $fence;
+			}
 			if ( 'live' === $mode ) {
 				$orders = Orders::count();
 				if ( is_wp_error( $orders ) ) {
