@@ -15,7 +15,7 @@ use WooStorefront\Support\Secrets;
 use WooStorefront\Support\SignedKey;
 
 /**
- * Validates cart handoffs and adopts the Cart-Token's Woo session.
+ * Validates cart handoffs and lets Woo clone the cart into a private browser session.
  */
 final class CheckoutEntry {
 	private const QUERY_VAR          = 'woo_storefront_cart_token';
@@ -52,7 +52,7 @@ final class CheckoutEntry {
 	}
 
 	/**
-	 * Validate a handoff, set the target Woo session cookie, and redirect.
+	 * Validate a handoff and redirect through Woo's native guest-session cloning.
 	 */
 	public function handle_entry(): void {
 		$cart_token = get_query_var( self::QUERY_VAR );
@@ -75,13 +75,13 @@ final class CheckoutEntry {
 		}
 
 		$user_id = $claims['user_id'] ?? null;
-		if ( ! is_string( $user_id ) && ! is_int( $user_id ) ) {
-			$this->reject( __( 'The cart session has no customer identifier.', 'woo-storefront' ) );
+		if ( ! is_string( $user_id ) || ! str_starts_with( $user_id, 't_' ) ) {
+			$this->reject( __( 'The cart session is not a guest cart.', 'woo-storefront' ) );
 		}
 
-		$this->set_session_cookie( (string) $user_id, (int) $claims['exp'] );
-
-		$checkout_url = wc_get_checkout_url();
+		// WC_Session_Handler clones guest carts and excludes customer details. Sharing
+		// the token's session cookie would expose checkout PII to anyone holding it.
+		$checkout_url = add_query_arg( 'session', $cart_token, wc_get_checkout_url() );
 		$return_args  = $this->validated_return_args();
 		if ( null !== $return_args ) {
 			$checkout_url = add_query_arg( $return_args, $checkout_url );
@@ -92,7 +92,7 @@ final class CheckoutEntry {
 	}
 
 	/**
-	 * Persist a signed return target once the adopted session is loaded.
+	 * Persist a signed return target once the cloned session is loaded.
 	 */
 	public function capture_return_url(): void {
 		if ( ! function_exists( 'is_checkout' ) || ! is_checkout() || ! function_exists( 'WC' ) || ! WC()->session ) {
@@ -141,18 +141,20 @@ final class CheckoutEntry {
 		}
 
 		$order_id = absint( get_query_var( 'order-received' ) );
-		if ( $order_id > 0 ) {
-			$order = wc_get_order( $order_id );
-			$url   = add_query_arg(
-				array(
-					'order_id'  => $order_id,
-					'order_key' => $order ? $order->get_order_key() : '',
-				),
-				$url
-			);
+		$order = $order_id > 0 ? wc_get_order( $order_id ) : false;
+		$order_key = isset( $_GET['key'] ) ? wc_clean( wp_unslash( $_GET['key'] ) ) : '';
+		if ( ! $order || ! is_string( $order_key ) || ! hash_equals( $order->get_order_key(), $order_key ) ) {
+			return;
 		}
+		$url = add_query_arg(
+			array(
+				'order_id'  => $order_id,
+				'order_key' => $order_key,
+			),
+			$url
+		);
 
-		wp_redirect( esc_url_raw( $url ), 302, 'Woo Storefront' ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- URL is HMAC-authenticated.
+		wp_safe_redirect( esc_url_raw( $url ), 302, 'Woo Storefront' );
 		exit;
 	}
 
@@ -176,16 +178,26 @@ final class CheckoutEntry {
 	}
 
 	/**
-	 * Validate an external return URL shape before signature verification.
+	 * Accept return targets only on the configured storefront origin, even when signed.
 	 *
 	 * @param string $url URL.
 	 * @return bool
 	 */
 	public static function is_valid_return_url( string $url ): bool {
 		$parts = wp_parse_url( $url );
-		return is_array( $parts )
-			&& isset( $parts['scheme'], $parts['host'] )
-			&& in_array( strtolower( (string) $parts['scheme'] ), array( 'http', 'https' ), true );
+		$home = wp_parse_url( home_url( '/' ) );
+		if ( ! is_array( $parts ) || ! is_array( $home ) ||
+			! isset( $parts['scheme'], $parts['host'], $home['scheme'], $home['host'] ) ||
+			isset( $parts['user'] ) || isset( $parts['pass'] ) ||
+			preg_match( '/[\\x00-\\x20\\x7f\\\\\\\\]/', $url ) ) {
+			return false;
+		}
+		$scheme = strtolower( $parts['scheme'] );
+		$home_scheme = strtolower( $home['scheme'] );
+		return in_array( $scheme, array( 'http', 'https' ), true )
+			&& $scheme === $home_scheme
+			&& strtolower( $parts['host'] ) === strtolower( $home['host'] )
+			&& ( $parts['port'] ?? ( 'https' === $scheme ? 443 : 80 ) ) === ( $home['port'] ?? ( 'https' === $home_scheme ? 443 : 80 ) );
 	}
 
 	/**
@@ -210,49 +222,6 @@ final class CheckoutEntry {
 			'return_expires' => $return_expires,
 			'return_key'     => $return_key,
 		);
-	}
-
-	/**
-	 * Create the same session cookie shape as WC_Session_Handler.
-	 *
-	 * @param string $customer_id Session/customer identifier from Cart-Token.
-	 * @param int    $expiration  Token expiration.
-	 */
-	private function set_session_cookie( string $customer_id, int $expiration ): void {
-		$cookie_name = 'wp_woocommerce_session_' . COOKIEHASH;
-		$expiring    = max( time(), $expiration - HOUR_IN_SECONDS );
-
-		// Single-pipe field delimiters over "customer_id|expiration" (current cookie format).
-		$to_hash     = $customer_id . '|' . $expiration;
-		$cookie_hash = self::session_cookie_hash( $to_hash );
-		$cookie      = implode( '|', array( $customer_id, (string) $expiration, (string) $expiring, $cookie_hash ) );
-
-		wc_setcookie( $cookie_name, $cookie, $expiration, is_ssl(), true );
-		$_COOKIE[ $cookie_name ] = $cookie;
-	}
-
-	/**
-	 * Hash a session cookie payload exactly as the installed WC_Session_Handler verifies it.
-	 *
-	 * The algorithm is private to Woo and has changed between releases (WooCommerce 11.2
-	 * verifies `hash_hmac( 'md5', $message, wp_hash( $message ) )`; earlier builds used
-	 * `wp_fast_hash()`). A guessed algorithm fails silently: Woo starts a fresh, empty
-	 * session and the checkout redirects to the cart. So ask the handler itself.
-	 *
-	 * @param string $message Cookie payload ("customer_id|expiration").
-	 * @return string
-	 */
-	private static function session_cookie_hash( string $message ): string {
-		if ( class_exists( \WC_Session_Handler::class ) && method_exists( \WC_Session_Handler::class, 'hash' ) ) {
-			$handler = function_exists( 'WC' ) && WC()->session instanceof \WC_Session_Handler
-				? WC()->session
-				: new \WC_Session_Handler();
-			return (string) ( new \ReflectionMethod( \WC_Session_Handler::class, 'hash' ) )->invoke( $handler, $message );
-		}
-
-		return function_exists( 'wp_fast_hash' )
-			? wp_fast_hash( $message )
-			: hash_hmac( 'md5', $message, wp_hash( $message ) );
 	}
 
 	/**
