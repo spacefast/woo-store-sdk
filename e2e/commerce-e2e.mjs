@@ -237,8 +237,16 @@ for (const storage of ['no', 'yes']) {
     await cartRequest('/update-item', { method: 'POST', body: JSON.stringify({ key: paper.key, quantity: 2 }) });
     wp('eval', `do_action('woocommerce_payment_complete', ${paid});`);
     assert.equal((await (await cartRequest()).json()).items.find((item) => item.id === context.physicalId).quantity, 2);
+    const originalPrice = execFileSync('docker', [...wpArgs, 'eval', `$p = wc_get_product(${context.physicalId}); echo $p->get_regular_price();`], { encoding: 'utf8' }).trim();
+    wp('eval', `$p = wc_get_product(${context.physicalId}); $p->set_regular_price('19.50'); $p->save();`);
+    // The clone recalculates changed prices while its donor still has the old
+    // line totals. Item identity and the mutation UUID still name the same cart.
     await handoffAgain();
-    await pay();
+    try {
+      await pay();
+    } finally {
+      wp('eval', `$p = wc_get_product(${context.physicalId}); $p->set_regular_price(${JSON.stringify(originalPrice)}); $p->save();`);
+    }
     assert.equal((await (await cartRequest()).json()).items_count, 0, 'Paid clone left the consumed source cart populated');
     await cartRequest('/add-item', { method: 'POST', body: JSON.stringify({ id: context.bookId, quantity: 1 }) });
     await handoffAgain();

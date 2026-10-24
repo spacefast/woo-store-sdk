@@ -11,6 +11,16 @@ namespace WooStorefront;
 
 /** Payment, including a webhook, may clear only the unchanged cart handed to checkout. */
 final class CheckoutCart {
+	/** Woo item keys encode the product, variation and item data, unlike mutable totals. */
+	private function cart_hash( array $cart ): string {
+		$items = array();
+		foreach ( $cart as $key => $item ) {
+			$items[ $key ] = $item['quantity'];
+		}
+		ksort( $items );
+		return hash( 'sha256', serialize( $items ) );
+	}
+
 	public function register(): void {
 		add_action( 'woocommerce_cart_loaded_from_session', array( $this, 'initialize_source' ), 10, 0 );
 		foreach ( array( 'woocommerce_add_to_cart', 'woocommerce_after_cart_item_quantity_update', 'woocommerce_cart_item_removed', 'woocommerce_cart_item_restored', 'woocommerce_cart_emptied', 'woocommerce_applied_coupon', 'woocommerce_removed_coupon' ) as $hook ) {
@@ -55,7 +65,7 @@ final class CheckoutCart {
 		$cart = WC()->session->get( 'cart' );
 		$revision = WC()->session->get( 'woo_storefront_cart_revision' );
 		if ( is_string( $id ) && str_starts_with( $id, 't_' ) && is_array( $cart ) && array() !== $cart && is_string( $revision ) ) {
-			WC()->session->set( 'woo_storefront_source_cart', array( 'id' => $id, 'hash' => hash( 'sha256', serialize( $cart ) ), 'revision' => $revision ) );
+			WC()->session->set( 'woo_storefront_source_cart', array( 'id' => $id, 'hash' => $this->cart_hash( $cart ), 'revision' => $revision ) );
 		}
 	}
 
@@ -88,7 +98,7 @@ final class CheckoutCart {
 		$data = is_string( $value ) ? maybe_unserialize( $value ) : null;
 		$cart = is_array( $data ) ? maybe_unserialize( $data['cart'] ?? null ) : null;
 		$revision = is_array( $data ) ? maybe_unserialize( $data['woo_storefront_cart_revision'] ?? null ) : null;
-		if ( is_string( $revision ) && hash_equals( $source['revision'], $revision ) && is_array( $cart ) && hash_equals( $source['hash'], hash( 'sha256', serialize( $cart ) ) ) ) {
+		if ( is_string( $revision ) && hash_equals( $source['revision'], $revision ) && is_array( $cart ) && hash_equals( $source['hash'], $this->cart_hash( $cart ) ) ) {
 			// Woo has no conditional session-delete API. Compare the complete stored
 			// bytes so even a concurrent address/cart edit wins over this cleanup.
 			$deleted = $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE session_key = %s AND BINARY session_value = BINARY %s', $table, $source['id'], $value ) );
