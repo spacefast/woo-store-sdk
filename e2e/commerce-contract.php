@@ -331,10 +331,29 @@ commerce_check( $book_id === wc_get_product_id_by_sku( $digital['key'] ) && 'pub
 $unmanaged->delete( true );
 
 unset( $_SERVER['HTTP_HOST'] );
-foreach ( array_keys( $store['emails'] ) as $email_id ) {
-	$rendered = commerce_result( $plugin->emails->render_order( $order->get_id(), $email_id ) );
-	commerce_check( str_contains( $rendered['html'], 'Test order' ) && str_contains( $rendered['html'], 'https://store.example.test/brand.png' ) && ! str_contains( $rendered['html'], '<sf-' ), 'Native trigger omitted template, canonical URL, slot contents or test banner.' );
-	commerce_check( ! str_contains( $rendered['html'], get_option( 'home' ) ) && ( 'new_order' === $email_id || str_contains( $rendered['html'], 'download_file=' ) ), 'Native email download used a request host instead of canonical origin.' );
+$mailer = WC()->mailer();
+$previous_emails = $mailer->emails;
+$force_block_editor = static fn() => 'yes';
+add_filter( 'pre_option_woocommerce_feature_block_email_editor_enabled', $force_block_editor );
+try {
+	$processing = new WC_Email_Customer_Processing_Order();
+	$new_account = new WC_Email_Customer_New_Account();
+	commerce_check( true === $processing->block_email_editor_enabled && true === $new_account->block_email_editor_enabled, 'The in-memory feature probe did not enable core block emails.' );
+	$filtered_emails = apply_filters( 'woocommerce_email_classes', array( 'WC_Email_Customer_Processing_Order' => $processing, 'WC_Email_Customer_New_Account' => $new_account ) );
+	$processing = $filtered_emails['WC_Email_Customer_Processing_Order'];
+	$new_account = $filtered_emails['WC_Email_Customer_New_Account'];
+	commerce_check( false === $processing->block_email_editor_enabled && true === $new_account->block_email_editor_enabled, 'Source binding did not disable only its own block email.' );
+	$eligible = apply_filters( 'woocommerce_transactional_emails_for_block_editor', array( $processing->id, $new_account->id ) );
+	commerce_check( array( $new_account->id ) === $eligible, 'The editor exposed a source-bound email or hid an unbound email.' );
+	$mailer->emails['WC_Email_Customer_Processing_Order'] = $processing;
+	foreach ( array_keys( $store['emails'] ) as $email_id ) {
+		$rendered = commerce_result( $plugin->emails->render_order( $order->get_id(), $email_id ) );
+		commerce_check( str_contains( $rendered['html'], 'Test order' ) && str_contains( $rendered['html'], 'https://store.example.test/brand.png' ) && ! str_contains( $rendered['html'], '<sf-' ), 'Native trigger omitted template, canonical URL, slot contents or test banner.' );
+		commerce_check( ! str_contains( $rendered['html'], get_option( 'home' ) ) && ( 'new_order' === $email_id || str_contains( $rendered['html'], 'download_file=' ) ), 'Native email download used a request host instead of canonical origin.' );
+	}
+} finally {
+	$mailer->emails = $previous_emails;
+	remove_filter( 'pre_option_woocommerce_feature_block_email_editor_enabled', $force_block_editor );
 }
 wp_set_current_user( $administrator->ID );
 $expires = time() + 3600;
