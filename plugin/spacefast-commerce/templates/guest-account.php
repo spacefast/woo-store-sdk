@@ -11,5 +11,5 @@ $spacefast_store_url = \SpacefastCommerce\Plugin::instance()?->store->url( '/' )
 <section class="spacefast-commerce-guest-account">
 	<h1><?php esc_html_e( 'No account needed', 'spacefast-commerce' ); ?></h1>
 	<p><?php esc_html_e( 'Use the links on your order confirmation or in your email to view your order and any downloads.', 'spacefast-commerce' ); ?></p>
-	<a class="button" href="<?php echo esc_url( $spacefast_store_url ); ?>"><?php esc_html_e( 'Back to store', 'spacefast-commerce' ); ?></a>
+	<a href="<?php echo esc_url( $spacefast_store_url ); ?>"><?php esc_html_e( 'Back to store', 'spacefast-commerce' ); ?></a>
 </section>
