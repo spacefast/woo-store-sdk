@@ -99,9 +99,10 @@ effect on the next render without retaining an earlier native or source-owned te
 
 On Spacefast, the companion extends the engine's request principal with named Woo capabilities.
 It grants no plugin/theme installation, user administration or `manage_options`, and password
-sign-in is disabled, and the guest account page points shoppers to their order links instead
-of showing a password form. On ordinary WordPress hosts, native administrator authentication
-and its account login form remain.
+sign-in and password recovery are disabled. Login and recovery screens point shoppers to
+their order links. Core and Woo reset submissions receive the same refusal for known and
+unknown accounts, without issuing a reset key. Ordinary WordPress hosts retain native
+administrator authentication and account recovery.
 
 ## Verification and packaging
 

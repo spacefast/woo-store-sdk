@@ -145,10 +145,12 @@ $request->set_body_params( array( 'id' => 'woocommerce_currency', 'value' => 'EU
 $managed_setting = rest_do_request( $request );
 commerce_check( 403 === $managed_setting->get_status() && 'source_managed_setting' === ( $managed_setting->get_data()['code'] ?? null ) && 'USD' === get_woocommerce_currency(), 'Native REST reported success for a rejected source-managed store setting; status=' . $managed_setting->get_status() . ', reported=' . ( $managed_setting->get_data()['value'] ?? '' ) );
 $tax_before = get_option( 'woocommerce_calc_taxes' );
-$request = new WP_REST_Request( 'POST', '/wc/v3/settings/general/batch' );
-$request->set_param( 'update', array( array( 'id' => 'woocommerce_currency', 'value' => 'EUR' ), array( 'id' => 'woocommerce_calc_taxes', 'value' => 'yes' === $tax_before ? 'no' : 'yes' ) ) );
-$managed_batch = rest_do_request( $request );
-commerce_check( 403 === $managed_batch->get_status() && 'source_managed_setting' === ( $managed_batch->get_data()['code'] ?? null ) && $tax_before === get_option( 'woocommerce_calc_taxes' ), 'Native settings batch bypassed source refusal or partially saved a refused request; status=' . $managed_batch->get_status() );
+foreach ( array( '/wc/v3/settings/general/batch', '/wc/v3/settings/batch' ) as $settings_batch ) {
+	$request = new WP_REST_Request( 'POST', $settings_batch );
+	$request->set_param( 'update', array( array( 'group_id' => 'general', 'id' => 'woocommerce_currency', 'value' => 'EUR' ), array( 'group_id' => 'general', 'id' => 'woocommerce_calc_taxes', 'value' => 'yes' === $tax_before ? 'no' : 'yes' ) ) );
+	$managed_batch = rest_do_request( $request );
+	commerce_check( 403 === $managed_batch->get_status() && 'source_managed_setting' === ( $managed_batch->get_data()['code'] ?? null ) && $tax_before === get_option( 'woocommerce_calc_taxes' ), 'Native settings batch bypassed source refusal or partially saved a refused request; route=' . $settings_batch . ', status=' . $managed_batch->get_status() );
+}
 $request = new WP_REST_Request( 'POST', '/wp/v2/settings' );
 $rest_brand_before = get_option( 'woo_storefront_settings' );
 $request->set_param( 'woo_storefront_settings', array( 'branding' => array( 'logo' => 'https://other.example/logo.png' ) ) );
@@ -166,6 +168,7 @@ commerce_check( str_contains( $managed_notice, 'Managed by your store source.' )
 $request = new WP_REST_Request( 'DELETE', '/wc/v3/shipping/zones/' . $plugin->shipping->zone_id() );
 commerce_check( 403 === rest_do_request( $request )->get_status(), 'Native REST deleted the source shipping zone.' );
 $brand = get_option( 'woo_storefront_settings' );
+commerce_check( '#000000' === WooStorefront\Branding::button_text_color( '#fff' ) && '#ffffff' === WooStorefront\Branding::button_text_color( '#234' ), 'Checkout button text does not contrast with light and dark source accents.' );
 update_option( 'blogname', 'Browser title' );
 update_option( 'woocommerce_currency', 'EUR' );
 update_option( 'woocommerce_default_country', 'DE:BE' );
@@ -279,11 +282,28 @@ try {
 $account_document = new DOMDocument();
 commerce_check( $account_document->loadHTML( wc_get_template_html( 'myaccount/form-login.php' ), LIBXML_NOERROR | LIBXML_NOWARNING ), 'Native account view did not render.' );
 commerce_check( 1 === ( new DOMXPath( $account_document ) )->query( '//input[@type="password"]' )->length, 'A host that permits passwords lost its native login.' );
+commerce_check( $account_document->loadHTML( wc_get_template_html( 'myaccount/form-lost-password.php' ), LIBXML_NOERROR | LIBXML_NOWARNING ) && 1 === ( new DOMXPath( $account_document ) )->query( '//form' )->length, 'A host that permits passwords lost its native recovery form.' );
 add_filter( 'spacefast_commerce_refuse_password_login', '__return_true' );
 try {
-	commerce_check( $account_document->loadHTML( wc_get_template_html( 'myaccount/form-login.php' ), LIBXML_NOERROR | LIBXML_NOWARNING ), 'Guest account view did not render.' );
-	$account_nodes = new DOMXPath( $account_document );
-	commerce_check( 0 === $account_nodes->query( '//input[@type="password"]' )->length && 'No account needed' === $account_nodes->query( '//h1' )->item( 0 )?->textContent && $plugin->store->url( '/' ) === $account_nodes->query( '//a' )->item( 0 )?->getAttribute( 'href' ), 'Password-disabled shoppers saw a dead login form or lost their store link.' );
+	foreach ( array( 'myaccount/form-login.php', 'myaccount/form-lost-password.php', 'myaccount/form-reset-password.php' ) as $account_template ) {
+		commerce_check( $account_document->loadHTML( wc_get_template_html( $account_template ), LIBXML_NOERROR | LIBXML_NOWARNING ), 'Guest account view did not render.' );
+		$account_nodes = new DOMXPath( $account_document );
+		commerce_check( 0 === $account_nodes->query( '//form' )->length && 'No account needed' === $account_nodes->query( '//h1' )->item( 0 )?->textContent && $plugin->store->url( '/' ) === $account_nodes->query( '//a' )->item( 0 )?->getAttribute( 'href' ), 'Password-disabled shoppers saw a password form or lost their store link: ' . $account_template );
+	}
+	$activation_key = get_userdata( $administrator->ID )->user_activation_key;
+	foreach ( array( $administrator->user_email, 'missing-reset-' . wp_generate_uuid4() . '@example.test' ) as $reset_login ) {
+		$reset = retrieve_password( $reset_login );
+		commerce_check( is_wp_error( $reset ) && array( 'spacefast_password_login_disabled' ) === $reset->get_error_codes(), 'Core password reset exposed account existence or sent a reset.' );
+		$_POST['user_login'] = $reset_login;
+		wc_clear_notices();
+		commerce_check( false === WC_Shortcode_My_Account::retrieve_password() && array( 'Password sign-in is off for this store. Sign in through Spacefast.' ) === array_column( wc_get_notices( 'error' ), 'notice' ), 'Woo password reset exposed account existence or sent a reset.' );
+	}
+	commerce_check( $activation_key === get_userdata( $administrator->ID )->user_activation_key, 'A refused password reset minted a key.' );
+	$reset_errors = new WP_Error();
+	do_action( 'validate_password_reset', $reset_errors, $administrator );
+	commerce_check( array( 'spacefast_password_login_disabled' ) === $reset_errors->get_error_codes(), 'An existing reset key could still change a password.' );
+	unset( $_POST['user_login'] );
+	wc_clear_notices();
 } finally {
 	remove_filter( 'spacefast_commerce_refuse_password_login', '__return_true' );
 }

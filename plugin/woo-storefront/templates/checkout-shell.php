@@ -46,7 +46,7 @@ $woo_storefront_type     = $woo_storefront_branding['typography'];
 			--wp-components-color-accent: var(--woo-storefront-primary);
 			background-color: var(--woo-storefront-primary);
 			border-color: var(--woo-storefront-primary);
-			color: #fff;
+			color: <?php echo esc_html( Branding::button_text_color( $woo_storefront_colors['primary'] ) ); ?>;
 		}
 	</style>
 </head>

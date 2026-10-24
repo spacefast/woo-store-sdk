@@ -65,6 +65,20 @@ final class Branding {
 		return self::sanitize( is_array( $value ) ? $value : array() );
 	}
 
+	/** Use whichever of black and white has more contrast with the sanitized accent. */
+	public static function button_text_color( string $primary ): string {
+		$hex = ltrim( self::color( $primary, '#7f54b3' ), '#' );
+		if ( 3 === strlen( $hex ) ) {
+			$hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+		}
+		$channels = array_map( static function ( string $channel ): float {
+			$value = hexdec( $channel ) / 255;
+			return $value <= 0.04045 ? $value / 12.92 : ( ( $value + 0.055 ) / 1.055 ) ** 2.4;
+		}, str_split( $hex, 2 ) );
+		$luminance = 0.2126 * $channels[0] + 0.7152 * $channels[1] + 0.0722 * $channels[2];
+		return ( $luminance + 0.05 ) / 0.05 >= 1.05 / ( $luminance + 0.05 ) ? '#000000' : '#ffffff';
+	}
+
 	/**
 	 * Sanitize settings.
 	 *
@@ -115,6 +129,6 @@ final class Branding {
 	 */
 	private static function color( mixed $value, string $fallback ): string {
 		$color = sanitize_hex_color( (string) $value );
-		return is_string( $color ) ? $color : $fallback;
+		return is_string( $color ) && '' !== $color ? $color : $fallback;
 	}
 }
