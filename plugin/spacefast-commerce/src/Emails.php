@@ -5,7 +5,7 @@ namespace SpacefastCommerce;
 
 /**
  * D8 email binding. Compiled templates arrive in store.json and are stored privately (an option,
- * never public files). `woocommerce_locate_template` swaps a bound email's HTML template for one
+ * never public files). `wc_get_template` swaps a bound email's HTML template for one
  * renderer, which fills six `<sf-*>` slots by token replacement on the stored HTML. The stored
  * HTML is data: it is never included or evaluated. Woo keeps triggers, recipients, enablement,
  * headers, CSS inlining and the plain-text part.
@@ -17,7 +17,7 @@ final class Emails {
 	public function __construct( private Store $store ) {}
 
 	public function register(): void {
-		add_filter( 'woocommerce_locate_template', array( $this, 'locate' ), 10, 2 );
+		add_filter( 'wc_get_template', array( $this, 'locate' ), 10, 5 );
 		add_filter( 'woocommerce_email_classes', array( $this, 'classic_for_bound' ), PHP_INT_MAX );
 		add_filter( 'woocommerce_transactional_emails_for_block_editor', fn ( array $ids ): array => array_values( array_diff( $ids, array_keys( $this->bound() ) ) ), PHP_INT_MAX );
 		add_filter( 'woocommerce_mail_callback_params', array( $this, 'test_banner' ), PHP_INT_MAX, 2 );
@@ -34,9 +34,14 @@ final class Emails {
 		update_option( 'spacefast_commerce_emails', $emails, false );
 	}
 
-	public function locate( string $template, string $name ): string {
+	/** Select after Woo's path cache, including a previously cached owned renderer. */
+	public function locate( string $template, string $name, array $args = array(), string $template_path = '', string $default_path = '' ): string {
 		$id = array_search( $name, Bundle::EMAILS, true );
-		return false !== $id && isset( $this->bound()[ $id ] ) ? dirname( __DIR__ ) . '/templates/email.php' : $template;
+		$owned = dirname( __DIR__ ) . '/templates/email.php';
+		if ( false !== $id && isset( $this->bound()[ $id ] ) ) {
+			return $owned;
+		}
+		return $template === $owned ? wc_locate_template( $name, $template_path, $default_path ) : $template;
 	}
 
 	/** The template override assumes classic emails; the block editor stays off for bound types. */

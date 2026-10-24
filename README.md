@@ -2,6 +2,8 @@
 
 Woo Store SDK is a typed, framework-friendly storefront client for WooCommerce. It provides catalog queries, cart-token sessions, hosted checkout, customer accounts, and adapters for React, Next.js, and TanStack Start.
 
+Customer registration follows WooCommerce's account-registration setting. When it is off, the public signup endpoint returns 403 and creates no customer.
+
 ## Packages
 
 - `@woo/storefront-core` — typed Store API client and framework-neutral sessions

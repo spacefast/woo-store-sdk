@@ -62,9 +62,12 @@ final class MerchantAccess {
 	 * D20: on Spacefast the merchant signs in through Spacefast, never with a WordPress password.
 	 * Only on the Spacefast engine: on an M2 host, a password is how the site owner gets in.
 	 */
+	public static function password_login_disabled(): bool {
+		return (bool) apply_filters( 'spacefast_commerce_refuse_password_login', function_exists( 'spacefast_content_principal_ensure_user' ) );
+	}
+
 	public function refuse_password( mixed $user, mixed $username, mixed $password ): mixed {
-		$refuse = apply_filters( 'spacefast_commerce_refuse_password_login', function_exists( 'spacefast_content_principal_ensure_user' ) );
-		if ( ! $refuse || ! is_string( $password ) || '' === $password ) {
+		if ( ! self::password_login_disabled() || ! is_string( $password ) || '' === $password ) {
 			return $user;
 		}
 		return new \WP_Error( 'spacefast_password_login_disabled', __( 'Password sign-in is off for this store. Sign in through Spacefast.', 'spacefast-commerce' ) );
