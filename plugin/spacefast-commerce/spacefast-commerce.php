@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Spacefast Commerce
  * Description: Source-managed WooCommerce stores: declared catalog, store pages, test/live mode and source-designed emails.
- * Version: 0.2.6
+ * Version: 0.2.7
  * Requires at least: 7.0
  * Requires PHP: 8.2
  * Requires Plugins: woocommerce, woo-storefront

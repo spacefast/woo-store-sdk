@@ -198,6 +198,19 @@ WC()->cart->calculate_totals();
 commerce_check( array() === WC()->shipping()->get_packages()[0]['rates'], 'An undeclared destination received a managed shipping rate.' );
 WC()->cart->empty_cart();
 commerce_check( wc_get_page_id( 'cart' ) < 1 && 'checkout' === get_post_field( 'post_name', wc_get_page_id( 'checkout' ) ) && 'my-account' === get_post_field( 'post_name', wc_get_page_id( 'myaccount' ) ), 'Fixed pages and cart ownership failed.' );
+
+// A stale or direct database assignment is not authority to delete arbitrary merchant pages.
+$ordinary_page = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Merchant information', 'post_content' => 'Keep this merchant content.' ), true );
+commerce_check( is_int( $ordinary_page ), 'Could not create merchant page.' );
+$checkout_page = wc_get_page_id( 'checkout' );
+foreach ( array( $ordinary_page, $checkout_page ) as $cart_assignment ) {
+	$plugin->managed->apply( static fn () => update_option( 'woocommerce_cart_page_id', $cart_assignment ) );
+	commerce_result( $plugin->provisioning->setup() );
+	commerce_check( get_post( $cart_assignment ) instanceof WP_Post && 0 === (int) get_option( 'woocommerce_cart_page_id' ), 'Setup deleted a page merely because the cart option referenced it.' );
+}
+update_option( 'woocommerce_cart_page_id', $ordinary_page );
+commerce_check( 0 === (int) get_option( 'woocommerce_cart_page_id' ), 'Merchant settings reassigned the cart page.' );
+wp_delete_post( $ordinary_page, true );
 // Simulate a plugin/SQL write that bypasses the managed-page guard. Woo's
 // canonical checkout factory is protected in 11.2; repair must still work.
 $checkout_id = wc_get_page_id( 'checkout' );
@@ -240,6 +253,11 @@ commerce_result( $plugin->catalog->apply( commerce_bundle( $store, array( $repla
 $after = current( wc_get_order( $order->get_id() )->get_downloadable_items() );
 commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ) && $download['download_id'] === $after['download_id'] && PrivateFiles::download_id( $digital['key'] ) === $after['download_id'], 'Asset replacement changed previous buyer grants.' );
 commerce_check( $replacement === file_get_contents( $after['file']['file'] ), 'Previous buyer did not receive the current source asset.' );
+$physical_conversion = $store;
+$physical_conversion['products'][0]['kind'] = 'physical';
+$physical_conversion['products'][0]['asset'] = null;
+$refuse( $physical_conversion, 'download-retained' );
+commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ) && 1 === count( wc_get_order( $order->get_id() )->get_downloadable_items() ), 'A digital-to-physical refusal revoked an earlier buyer download.' );
 commerce_check( 'Revised field guide' === current( $order->get_items() )->get_name(), 'Apply rewrote a purchased order line.' );
 
 // Query failure is not an empty store, for either native order datastore.
@@ -272,6 +290,20 @@ try {
 	commerce_check( false !== $restored_table, 'Restore the disposable fixture order table.' );
 }
 commerce_check( $order_count_before_fault === SpacefastCommerce\Orders::count(), 'Order history did not recover after the database was restored.' );
+
+// Download history has its own datastore and must also fail closed before an apply writes.
+$downloads_table = $wpdb->prefix . 'woocommerce_downloadable_product_permissions';
+$held_downloads = $downloads_table . '_held';
+$suppress_errors_before_fault = $wpdb->suppress_errors( true );
+commerce_check( false !== $wpdb->query( $wpdb->prepare( 'RENAME TABLE %i TO %i', $downloads_table, $held_downloads ) ), 'Could not isolate disposable download permissions.' );
+try {
+	$refuse( $physical_conversion, 'downloads-unavailable' );
+} finally {
+	$restored_downloads = $wpdb->query( $wpdb->prepare( 'RENAME TABLE %i TO %i', $held_downloads, $downloads_table ) );
+	$wpdb->suppress_errors( $suppress_errors_before_fault );
+	commerce_check( false !== $restored_downloads, 'Restore the disposable download permissions.' );
+}
+commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ), 'Download history did not survive a datastore read failure.' );
 
 // A move away from Woo may stop sales, but it cannot erase purchased entitlements.
 $native_before_disable = array( 'hash' => $plugin->store->store_hash(), 'counter' => $plugin->store->counter(), 'mode' => $plugin->store->mode(), 'orders' => SpacefastCommerce\Orders::count(), 'stock' => wc_get_product( $print_id )->get_stock_quantity() );
@@ -315,6 +347,7 @@ $context = array(
 	'bundle' => $directory, 'testOrders' => array( $order->get_id(), $interrupted->get_id() ), 'stockBeforeOrders' => 47,
 	'orderCount' => SpacefastCommerce\Orders::count(), 'buyerEmail' => $order->get_billing_email(),
 	'downloadUrl' => $after['download_url'], 'downloadSha256' => hash( 'sha256', $replacement ),
+	'orderReceivedUrl' => $order->get_checkout_order_received_url(),
 	'origin' => get_option( 'home' ),
 	'shippingZoneId' => $plugin->shipping->zone_id(),
 	'adminCookie' => AUTH_COOKIE . '=' . $auth_cookie . '; ' . LOGGED_IN_COOKIE . '=' . $logged_cookie,

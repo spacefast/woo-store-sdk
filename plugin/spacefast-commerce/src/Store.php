@@ -25,7 +25,9 @@ final class Store {
 			if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
 				continue;
 			}
-			$host = $parts['scheme'] . '://' . $parts['host'] . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' );
+			// WordPress may upgrade an http-stored home URL to https behind a TLS
+			// proxy before this filter runs. Its authority still belongs to this site.
+			$host = wp_parse_url( $url, PHP_URL_SCHEME ) . '://' . $parts['host'] . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' );
 			if ( $url === $host || str_starts_with( $url, $host . '/' ) || str_starts_with( $url, $host . '?' ) ) {
 				return $origin . substr( $url, strlen( $host ) );
 			}

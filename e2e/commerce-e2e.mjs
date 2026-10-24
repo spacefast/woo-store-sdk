@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -98,6 +99,90 @@ for (const storage of ['no', 'yes']) {
   assert.equal(products.status, 200);
   const productList = await products.json();
   assert.deepEqual(productList.map((product) => product.id), [context.bookId]);
+  if (storage === 'no') {
+    const cartEndpoint = new URL('/wp-json/wc/store/v1/cart', context.origin);
+    const fresh = await request(cartEndpoint);
+    assert.equal(fresh.status, 200);
+    const token = fresh.headers.get('cart-token');
+    assert.ok(token, 'Native Store API did not issue a guest cart token');
+    const cartRequest = async (suffix = '', options = {}) => {
+      const response = await request(new URL(cartEndpoint.pathname + suffix, context.origin), {
+        ...options, headers: { 'Cart-Token': token, 'Content-Type': 'application/json', ...options.headers },
+      });
+      assert.equal(response.status, suffix === '/add-item' ? 201 : 200, await response.clone().text());
+      return response;
+    };
+    const cart = await (await cartRequest('/add-item', { method: 'POST', body: JSON.stringify({ id: context.bookId, quantity: 1 }) })).json();
+    const returnPath = '/order-confirmation/';
+    const canonicalReturn = new URL(returnPath, status.canonicalOrigin).href;
+    // Model the local TLS proxy without depending on public DNS or bypassing WP canonical URLs.
+    // Node fetch ignores an explicit Host header. Use HTTP directly to exercise WP's real host checks.
+    const browserRequest = (url, options = {}) => new Promise((resolve, reject) => {
+      const request = httpRequest(localUrl(url, context.origin), {
+        ...options, headers: { Host: new URL(status.canonicalOrigin).host, 'X-Forwarded-Proto': 'https', ...options.headers },
+        signal: AbortSignal.timeout(30_000),
+      }, (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('error', reject);
+        response.on('end', () => {
+          const headers = new Headers();
+          for (let index = 0; index < response.rawHeaders.length; index += 2) {
+            headers.append(response.rawHeaders[index], response.rawHeaders[index + 1]);
+          }
+          resolve(new Response(Buffer.concat(chunks), { status: response.statusCode, headers }));
+        });
+      });
+      request.on('error', reject);
+      request.end();
+    });
+    const safeCart = await (await cartRequest(`?return_url=${encodeURIComponent(canonicalReturn)}`)).json();
+    assert.equal(new URL(safeCart.checkout_url).searchParams.get('return_url'), canonicalReturn);
+    for (const unsafe of ['https://evil.example/collect', 'https://store.example.test:444/collect', 'https://user@store.example.test/collect', 'http://store.example.test/collect']) {
+      const refused = await (await cartRequest(`?return_url=${encodeURIComponent(unsafe)}`)).json();
+      assert.equal(new URL(refused.checkout_url).searchParams.has('return_url'), false, `Signed unsafe return: ${unsafe}`);
+    }
+    const entry = await browserRequest(safeCart.checkout_url);
+    assert.equal(entry.status, 302);
+    const checkout = new URL(entry.headers.get('location'));
+    assert.equal(checkout.searchParams.get('session'), token);
+    const cloned = await browserRequest(checkout);
+    assert.equal(cloned.status, 200, await cloned.clone().text());
+    const cookies = cloned.headers.getSetCookie().map((cookie) => cookie.split(';')[0]).join('; ');
+    assert.match(cookies, /wp_woocommerce_session_/);
+    const browserCart = await browserRequest(cartEndpoint, { headers: { cookie: cookies } });
+    assert.equal(browserCart.status, 200);
+    assert.deepEqual((await browserCart.json()).items.map((item) => item.id), cart.items.map((item) => item.id));
+    const browserToken = browserCart.headers.get('cart-token');
+    assert.ok(browserToken);
+    assert.notEqual(browserToken.split('.')[1], token.split('.')[1], 'Checkout reused the source cart session');
+    const address = await request(new URL(cartEndpoint.pathname + '/update-customer', context.origin), {
+      method: 'POST', headers: { 'Cart-Token': browserToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billing_address: { email: 'private-checkout@example.test', first_name: 'Private buyer' } }),
+    });
+    assert.equal(address.status, 200, await address.clone().text());
+    assert.equal((await address.json()).billing_address.email, 'private-checkout@example.test');
+    const original = await (await cartRequest()).json();
+    assert.notEqual(original.billing_address.email, 'private-checkout@example.test', 'Source Cart-Token exposed checkout PII');
+    const wrongOrderKey = localUrl(context.orderReceivedUrl, context.origin);
+    wrongOrderKey.searchParams.set('key', 'not-this-buyers-order-key');
+    const unauthorizedOrder = await browserRequest(wrongOrderKey, { headers: { cookie: cookies } });
+    assert.equal(unauthorizedOrder.headers.get('location'), null, 'Order key escaped before Woo validated the order-received request');
+    // Restore the signed return after the invalid order request consumed it.
+    assert.equal((await browserRequest(checkout, { headers: { cookie: cookies } })).status, 200);
+    const received = await browserRequest(context.orderReceivedUrl, { headers: { cookie: cookies } });
+    assert.equal(received.status, 302);
+    const returned = new URL(received.headers.get('location'));
+    assert.equal(returned.origin + returned.pathname, canonicalReturn);
+    assert.equal(returned.searchParams.get('order_key'), new URL(context.orderReceivedUrl).searchParams.get('key'));
+    // Reusing the link in another browser clones the source, never the first buyer's session.
+    const replay = await browserRequest(checkout);
+    const replayCookies = replay.headers.getSetCookie().map((cookie) => cookie.split(';')[0]).join('; ');
+    const replayCart = await browserRequest(cartEndpoint, { headers: { cookie: replayCookies } });
+    assert.equal(replayCart.status, 200);
+    assert.notEqual((await replayCart.json()).billing_address.email, 'private-checkout@example.test');
+    console.log('PASS: same-origin signed checkout return and native private guest-session clone');
+  }
   const shippingEdit = new URLSearchParams({ action: 'woocommerce_shipping_zones_save_changes', wc_shipping_zones_nonce: context.shippingNonce });
   shippingEdit.set(`changes[${context.shippingZoneId}][deleted]`, 'true');
   const refusedEdit = await request(new URL('/wp-admin/admin-ajax.php', context.origin), {

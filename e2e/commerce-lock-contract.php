@@ -12,6 +12,19 @@ if ( 'holder' === ( $args[0] ?? '' ) ) {
 	} );
 } else {
 	WP_CLI::line( 'COUNTER_READ:' . $before );
+	add_filter( 'pre_update_option_woocommerce_file_download_method', static function ( mixed $value ): mixed {
+		global $wpdb;
+		$lock = 'spacefast_commerce_' . substr( hash( 'sha256', $wpdb->prefix . DB_NAME ), 0, 32 );
+		$owner = $wpdb->get_var( $wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', $lock ) );
+		if ( (string) $owner !== (string) $wpdb->get_var( 'SELECT CONNECTION_ID()' ) ) {
+			throw new RuntimeException( 'Setup wrote native options without owning the commerce lock.' );
+		}
+		return $value;
+	} );
+	$setup = SpacefastCommerce\Plugin::instance()->provisioning->setup();
+	if ( is_wp_error( $setup ) ) {
+		throw new RuntimeException( $setup->get_error_message() );
+	}
 	$result = $store->with_lock( static fn (): int => $store->next_counter() );
 }
 if ( is_wp_error( $result ) ) {

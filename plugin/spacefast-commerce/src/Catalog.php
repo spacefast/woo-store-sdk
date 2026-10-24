@@ -161,6 +161,23 @@ final class Catalog {
 			if ( $owner && ManagedProducts::key( $owner ) !== $product['key'] ) {
 				return Bundle::refuse( 'sku-clash', 'Another WooCommerce product (#' . $owner . ') already uses the SKU "' . $product['key'] . '". Change that product\'s SKU or pick another key.', '/products/' . $index . '/key', $product['key'] );
 			}
+			if ( 'physical' === $product['kind'] && isset( $current[ $product['key'] ] ) ) {
+				// Woo authorizes old grants against the product's current downloads.
+				// Clearing that entry would revoke earlier buyers' entitlements.
+				global $wpdb;
+				$wpdb->last_error = '';
+				try {
+					$grants = \WC_Data_Store::load( 'customer-download' )->get_downloads( array( 'product_id' => $current[ $product['key'] ]['id'], 'limit' => 1 ) );
+				} catch ( \Throwable ) {
+					return Bundle::refuse( 'downloads-unavailable', 'Buyer download history could not be read. Retry when the store database is available.' );
+				}
+				if ( '' !== $wpdb->last_error || ! is_array( $grants ) ) {
+					return Bundle::refuse( 'downloads-unavailable', 'Buyer download history could not be read. Retry when the store database is available.' );
+				}
+				if ( array() !== $grants ) {
+					return Bundle::refuse( 'download-retained', 'Product "' . $product['key'] . '" has buyer download grants. Keep it digital and use a new key for the physical product.', '/products/' . $index . '/kind', $product['key'] );
+				}
+			}
 		}
 		$pages = $this->storefront->check_pages();
 		if ( is_wp_error( $pages ) ) {
