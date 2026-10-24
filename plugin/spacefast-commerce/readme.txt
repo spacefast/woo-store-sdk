@@ -45,6 +45,7 @@ wp spacefast-commerce apply /path/to/bundle --canonical-origin=https://shop.exam
 wp spacefast-commerce status
 wp spacefast-commerce mode test
 wp spacefast-commerce mode live
+wp spacefast-commerce origin https://shop.example
 wp spacefast-commerce email render 123 customer_completed_order
 
 Every command emits exactly one JSON document and exits 0 on success or 1 on
@@ -53,6 +54,9 @@ products before writing; retain their source key with active:false to retire
 sales. --origin=rollback deactivates products missing from the rollback target.
 Hosting coordinators supply --baseline=key1,key2 for the live version or
 --no-live-catalog when no catalog is live. Empty --baseline= is refused.
+The origin command changes canonical links without changing payment mode or
+performing test-order cleanup. Hosting coordinators fence native writes with
+--generation and --command-generation.
 
 == Verification ==
 

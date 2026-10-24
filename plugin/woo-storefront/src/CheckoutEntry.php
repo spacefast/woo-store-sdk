@@ -78,6 +78,11 @@ final class CheckoutEntry {
 		if ( ! is_string( $user_id ) || ! str_starts_with( $user_id, 't_' ) ) {
 			$this->reject( __( 'The cart session is not a guest cart.', 'woo-storefront' ) );
 		}
+		if ( WC()->session instanceof \WC_Session_Handler && WC()->session->get( 'previous_customer_id' ) === $user_id ) {
+			// Woo otherwise reuses the previous clone, even after its cart changed or
+			// was purchased. Expire it through Woo before cloning the current cart.
+			WC()->session->forget_session();
+		}
 
 		// WC_Session_Handler clones guest carts and excludes customer details. Sharing
 		// the token's session cookie would expose checkout PII to anyone holding it.

@@ -5,7 +5,7 @@
  * Version: 0.1.5
  * Requires at least: 6.4
  * Requires PHP: 8.1
- * WC requires at least: 8.3
+ * WC requires at least: 11.2
  * Text Domain: woo-storefront
  *
  * @package WooStorefront
@@ -28,6 +28,7 @@ $woo_storefront_files = array(
 	'src/Support/Secrets.php',
 	'src/CheckoutUrl.php',
 	'src/CheckoutEntry.php',
+	'src/CheckoutCart.php',
 	'src/Sessions.php',
 	'src/Auth.php',
 	'src/Accounts.php',

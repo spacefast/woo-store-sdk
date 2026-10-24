@@ -17,7 +17,7 @@ final class Plugin {
 	 * Boot the plugin after WooCommerce has loaded.
 	 */
 	public static function boot(): void {
-		if ( PHP_VERSION_ID < 80100 || ! class_exists( 'WooCommerce' ) ) {
+		if ( PHP_VERSION_ID < 80100 || ! class_exists( 'WooCommerce' ) || ! defined( 'WC_VERSION' ) || version_compare( WC_VERSION, '11.2', '<' ) ) {
 			add_action( 'admin_notices', array( self::class, 'requirements_notice' ) );
 			return;
 		}
@@ -27,6 +27,7 @@ final class Plugin {
 			new Branding(),
 			new CheckoutUrl(),
 			new CheckoutEntry(),
+			new CheckoutCart(),
 			new Sessions(),
 			$auth,
 			new Accounts( $auth ),
@@ -42,10 +43,10 @@ final class Plugin {
 	 * Plugin activation.
 	 */
 	public static function activate(): void {
-		if ( PHP_VERSION_ID < 80100 || ! class_exists( 'WooCommerce' ) ) {
+		if ( PHP_VERSION_ID < 80100 || ! class_exists( 'WooCommerce' ) || ! defined( 'WC_VERSION' ) || version_compare( WC_VERSION, '11.2', '<' ) ) {
 			deactivate_plugins( plugin_basename( WOO_STOREFRONT_FILE ) );
 			wp_die(
-				esc_html__( 'Woo Storefront requires PHP 8.1 or newer and an active WooCommerce installation.', 'woo-storefront' ),
+				esc_html__( 'Woo Storefront requires PHP 8.1 or newer and WooCommerce 11.2 or newer.', 'woo-storefront' ),
 				esc_html__( 'Plugin requirements not met', 'woo-storefront' ),
 				array( 'back_link' => true )
 			);
@@ -71,7 +72,7 @@ final class Plugin {
 		}
 
 		echo '<div class="notice notice-error"><p>';
-		echo esc_html__( 'Woo Storefront is inactive because it requires PHP 8.1 or newer and WooCommerce.', 'woo-storefront' );
+		echo esc_html__( 'Woo Storefront is inactive because it requires PHP 8.1 or newer and WooCommerce 11.2 or newer.', 'woo-storefront' );
 		echo '</p></div>';
 	}
 }

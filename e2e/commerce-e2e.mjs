@@ -134,7 +134,7 @@ for (const storage of ['no', 'yes']) {
         });
       });
       request.on('error', reject);
-      request.end();
+      request.end(options.body);
     });
     const safeCart = await (await cartRequest(`?return_url=${encodeURIComponent(canonicalReturn)}`)).json();
     assert.equal(new URL(safeCart.checkout_url).searchParams.get('return_url'), canonicalReturn);
@@ -148,7 +148,7 @@ for (const storage of ['no', 'yes']) {
     assert.equal(checkout.searchParams.get('session'), token);
     const cloned = await browserRequest(checkout);
     assert.equal(cloned.status, 200, await cloned.clone().text());
-    const cookies = cloned.headers.getSetCookie().map((cookie) => cookie.split(';')[0]).join('; ');
+    let cookies = cloned.headers.getSetCookie().map((cookie) => cookie.split(';')[0]).join('; ');
     assert.match(cookies, /wp_woocommerce_session_/);
     const browserCart = await browserRequest(cartEndpoint, { headers: { cookie: cookies } });
     assert.equal(browserCart.status, 200);
@@ -182,6 +182,73 @@ for (const storage of ['no', 'yes']) {
     assert.equal(replayCart.status, 200);
     assert.notEqual((await replayCart.json()).billing_address.email, 'private-checkout@example.test');
     console.log('PASS: same-origin signed checkout return and native private guest-session clone');
+
+    const currentBrowserCart = () => browserRequest(cartEndpoint, { headers: { cookie: cookies } });
+    const receiveCookies = (current, response) => {
+      const jar = new Map(current.split('; ').filter(Boolean).map((cookie) => {
+        const index = cookie.indexOf('=');
+        return [cookie.slice(0, index), cookie.slice(index + 1)];
+      }));
+      for (const header of response.headers.getSetCookie()) {
+        const cookie = header.split(';')[0];
+        const index = cookie.indexOf('=');
+        const name = cookie.slice(0, index);
+        const value = cookie.slice(index + 1);
+        if (value) jar.set(name, value); else jar.delete(name);
+      }
+      return [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
+    };
+    const handoffAgain = async () => {
+      const current = await (await cartRequest()).json();
+      const entry = await browserRequest(current.checkout_url, { headers: { cookie: cookies } });
+      assert.equal(entry.status, 302);
+      const reset = receiveCookies(cookies, entry);
+      const checkout = await browserRequest(entry.headers.get('location'), { headers: { cookie: reset } });
+      assert.equal(checkout.status, 200, await checkout.clone().text());
+      cookies = receiveCookies(reset, checkout);
+      const cart = await (await currentBrowserCart()).json();
+      assert.deepEqual(cart.items.map(({ id, quantity }) => ({ id, quantity })), current.items.map(({ id, quantity }) => ({ id, quantity })), 'Repeated handoff reused a stale checkout cart');
+    };
+    const pay = async () => {
+      const cart = await currentBrowserCart();
+      const nonce = cart.headers.get('Nonce');
+      assert.ok(nonce, 'Checkout session did not issue a Store API nonce');
+      const address = { first_name: 'Private', last_name: 'Buyer', address_1: '1 Main Street', city: 'San Francisco', postcode: '94016', country: 'US', state: 'CA' };
+      const payment = await browserRequest(new URL('/wp-json/wc/store/v1/checkout', context.origin), {
+        method: 'POST', headers: { cookie: cookies, Nonce: nonce, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billing_address: { ...address, email: 'checkout-settlement@example.test' }, shipping_address: address, payment_method: 'dummy' }),
+      });
+      assert.equal(payment.status, 200, await payment.clone().text());
+      const order = await payment.json();
+      assert.equal(order.status, 'processing');
+      context.testOrders.push(order.order_id);
+      context.orderCount += 1;
+      return order.order_id;
+    };
+
+    const changed = await (await cartRequest('/add-item', { method: 'POST', body: JSON.stringify({ id: context.physicalId, quantity: 2 }) })).json();
+    await handoffAgain();
+    const paper = changed.items.find((item) => item.id === context.physicalId);
+    const newer = await (await cartRequest('/update-item', { method: 'POST', body: JSON.stringify({ key: paper.key, quantity: 1 }) })).json();
+    const paid = await pay();
+    assert.deepEqual((await (await cartRequest()).json()).items.map(({ id, quantity }) => ({ id, quantity })), newer.items.map(({ id, quantity }) => ({ id, quantity })), 'Payment erased a newer source cart');
+    // An old payment notification cannot erase that later cart if it returns to the original contents.
+    await cartRequest('/update-item', { method: 'POST', body: JSON.stringify({ key: paper.key, quantity: 2 }) });
+    wp('eval', `do_action('woocommerce_payment_complete', ${paid});`);
+    assert.equal((await (await cartRequest()).json()).items.find((item) => item.id === context.physicalId).quantity, 2);
+    await handoffAgain();
+    await pay();
+    assert.equal((await (await cartRequest()).json()).items_count, 0, 'Paid clone left the consumed source cart populated');
+    await cartRequest('/add-item', { method: 'POST', body: JSON.stringify({ id: context.bookId, quantity: 1 }) });
+    await handoffAgain();
+    // A merchant testing the shop while signed into wp-admin uses the same handoff contract.
+    cookies = context.adminCookie;
+    await handoffAgain();
+    await cartRequest('/add-item', { method: 'POST', body: JSON.stringify({ id: context.physicalId, quantity: 1 }) });
+    await handoffAgain();
+    // Keep the existing cleanup/order-count owner aware of the additional real test purchases.
+    execFileSync('docker', ['exec', '-i', container, 'tee', '/tmp/commerce-m1-context.json'], { input: JSON.stringify(context), stdio: ['pipe', 'ignore', 'inherit'] });
+    console.log('PASS: repeated checkout uses current items; payment clears only its unchanged source cart');
   }
   const shippingEdit = new URLSearchParams({ action: 'woocommerce_shipping_zones_save_changes', wc_shipping_zones_nonce: context.shippingNonce });
   shippingEdit.set(`changes[${context.shippingZoneId}][deleted]`, 'true');
@@ -245,7 +312,16 @@ for (const option of fenceOptions) {
 }
 try {
   receipt(['mode', 'test', '--generation=2', '--command-generation=2', '--canonical-origin=https://current.example.test']);
-  receipt(['mode', 'live', '--generation=1', '--command-generation=3', '--canonical-origin=https://stale.example.test'], 'mode-superseded');
+  const originOnly = receipt(['origin', 'https://renamed.example.test', '--generation=2', '--command-generation=3']);
+  assert.equal(originOnly.canonicalOrigin, 'https://renamed.example.test');
+  const afterOrigin = receipt(['status']);
+  assert.equal(afterOrigin.mode, 'test');
+  assert.equal(afterOrigin.orderCount, beforeFence.orderCount);
+  assert.equal(afterOrigin.counter, beforeFence.counter);
+  receipt(['origin', 'https://stale.example.test', '--generation=1', '--command-generation=4'], 'mode-superseded');
+  receipt(['origin', 'https://stale.example.test', '--generation=2', '--command-generation=2'], 'mode-superseded');
+  assert.equal(receipt(['status']).canonicalOrigin, 'https://renamed.example.test');
+  receipt(['mode', 'live', '--generation=1', '--command-generation=4', '--canonical-origin=https://stale.example.test'], 'mode-superseded');
   receipt(['mode', 'test', '--generation=2', '--command-generation=1', '--canonical-origin=https://stale.example.test'], 'mode-superseded');
   receipt(['mode', 'live'], 'mode-superseded');
   receipt(['apply', '/tmp/does-not-matter', '--generation=1', '--command-generation=3'], 'mode-superseded');
@@ -253,8 +329,8 @@ try {
   assert.equal(receipt(['status']).counter, beforeFence.counter);
   const current = receipt(['status']);
   assert.equal(current.mode, 'test');
-  assert.equal(current.canonicalOrigin, 'https://current.example.test');
-  receipt(['mode', 'test', '--generation=2', '--command-generation=2', '--canonical-origin=https://current.example.test']);
+  assert.equal(current.canonicalOrigin, 'https://renamed.example.test');
+  receipt(['mode', 'test', '--generation=2', '--command-generation=3', '--canonical-origin=https://renamed.example.test']);
   receipt(['mode', beforeFence.mode, '--generation=3', '--command-generation=4', `--canonical-origin=${beforeFence.canonicalOrigin}`]);
 } finally {
   for (const option of fenceOptions) wp('option', 'delete', option);

@@ -25,6 +25,7 @@ wp spacefast-commerce disable
 wp spacefast-commerce status
 wp spacefast-commerce mode test
 wp spacefast-commerce mode live
+wp spacefast-commerce origin https://shop.example
 wp spacefast-commerce email render 123 customer_completed_order
 ```
 
@@ -37,7 +38,7 @@ held files can be omitted. No store identity, credentials or test/live mode belo
 
 Apply refuses removals, SKU conflicts, currency changes under products/orders, invalid images,
 invalid email templates and missing/corrupt files before changing the catalog or counter.
-A MySQL named lock serializes apply, disable and mode changes. An infrastructure failure during writes
+A MySQL named lock serializes setup, apply, disable, origin and mode changes. An infrastructure failure during writes
 requires retrying the same bundle; apply repairs native drift and updates stable identities.
 
 Without a baseline flag, every previously managed product is in the removal baseline.
@@ -62,6 +63,13 @@ and product pages redirect to the storefront.
 Digital products use a stable download ID per source key. Replacing an asset updates the file
 for existing buyers while preserving their native grants, expiry and remaining downloads.
 Bytes live outside the web root; WooCommerce authorizes and transfers them.
+Physical targets with existing buyer download grants refuse before writes; keep
+the digital key and declare a separate physical key. An unavailable native
+permissions datastore returns `downloads-unavailable` rather than authorizing removal.
+
+The origin command updates canonical links without changing payment mode or
+running order cleanup. It uses the same `--generation` and `--command-generation`
+fence as mode and catalog writes.
 
 ## Modes and emails
 
