@@ -65,5 +65,7 @@ dynamic local ports. `COMMERCE_FIXTURE_READY` reports its container and origins;
 `node e2e/commerce-fixture.mjs down` removes that named project and its volumes.
 Set `COMMERCE_ENGINE_ROOT` to a Spacefast `runtime/engine` directory to also prove
 the companion against the real engine's request principal and capability filters.
+This includes the pinned Stripe plugin's settings read/write permissions without
+`manage_options`, and refusal of those routes for an editor principal.
 See [the companion reference](plugin/spacefast-commerce/TECHNICAL.md) for commands,
 source-field ownership, modes, portable host setup and release packaging.
