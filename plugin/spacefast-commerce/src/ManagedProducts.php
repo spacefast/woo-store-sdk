@@ -30,8 +30,9 @@ final class ManagedProducts {
 
 	public function register(): void {
 		foreach ( array( 'blogname', 'woocommerce_currency' ) as $option ) {
-			add_filter( 'pre_update_option_' . $option, fn ( mixed $value, mixed $old ): mixed => $this->store_managed() ? $old : $value, 10, 2 );
+			add_filter( 'pre_update_option_' . $option, array( $this, 'guard_option' ), 10, 2 );
 		}
+		add_filter( 'rest_request_before_callbacks', array( $this, 'guard_store_rest' ), 10, 3 );
 		add_filter( 'pre_update_option_woocommerce_default_country', array( $this, 'guard_country' ), 10, 2 );
 		add_filter( 'pre_update_option_woo_storefront_settings', array( $this, 'guard_brand' ), 10, 2 );
 		add_action( 'woocommerce_before_product_object_save', array( $this, 'guard_save' ) );
@@ -51,8 +52,66 @@ final class ManagedProducts {
 		return ! $this->applying && (bool) get_option( 'spacefast_commerce_store_hash' );
 	}
 
+	private static function setting_message(): string {
+		return __( 'These store settings are managed by your store source. Edit the source and publish.', 'spacefast-commerce' );
+	}
+
+	/** A native settings save must explain a refusal instead of reporting a successful edit. */
+	private function setting_refused(): void {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( $screen && 'woocommerce_page_wc-settings' === $screen->id ) {
+			\WC_Admin_Settings::add_error( self::setting_message() );
+		} elseif ( $screen && 'options-general' === $screen->id ) {
+			add_settings_error( 'general', 'source_managed_setting', self::setting_message() );
+		}
+	}
+
+	public function guard_option( mixed $value, mixed $old ): mixed {
+		if ( ! $this->store_managed() || $value === $old ) {
+			return $value;
+		}
+		$this->setting_refused();
+		return $old;
+	}
+
 	public function guard_country( mixed $value, mixed $old ): mixed {
-		return $this->store_managed() && explode( ':', (string) $value )[0] !== explode( ':', (string) $old )[0] ? $old : $value;
+		if ( $this->store_managed() && explode( ':', (string) $value )[0] !== explode( ':', (string) $old )[0] ) {
+			$this->setting_refused();
+			return $old;
+		}
+		return $value;
+	}
+
+	/** Woo's setting controller builds its receipt from the requested value, even if an option filter refuses it. */
+	public function guard_store_rest( mixed $response, array $handler, \WP_REST_Request $request ): mixed {
+		if ( null !== $response || ! $this->store_managed() || in_array( $request->get_method(), array( 'GET', 'HEAD', 'OPTIONS' ), true ) ) {
+			return $response;
+		}
+		$changed = false;
+		if ( preg_match( '#^/wc/v[1-4]/settings/[^/]+/([^/]+)/?$#', $request->get_route(), $match ) && current_user_can( 'manage_woocommerce' ) ) {
+			// Woo's batch controller calls update_item directly, without another REST dispatch.
+			$updates = 'batch' === $match[1] ? $request->get_param( 'update' ) : array( array( 'id' => $request->get_param( 'id' ), 'value' => $request->get_param( 'value' ) ) );
+			foreach ( is_array( $updates ) ? $updates : array() as $update ) {
+				$option = is_array( $update ) ? ( $update['id'] ?? null ) : null;
+				$value = is_array( $update ) ? ( $update['value'] ?? null ) : null;
+				if ( is_string( $value ) && in_array( $option, array( 'blogname', 'woocommerce_currency', 'woocommerce_default_country' ), true ) ) {
+					$old = (string) get_option( $option );
+					$changed = 'woocommerce_default_country' === $option ? explode( ':', $value )[0] !== explode( ':', $old )[0] : $value !== $old;
+					if ( $changed ) {
+						break;
+					}
+				}
+			}
+		} elseif ( '/wp/v2/settings' === $request->get_route() && current_user_can( 'manage_options' ) ) {
+			$changed = $request->has_param( 'title' ) && $request->get_param( 'title' ) !== get_option( 'blogname' );
+			$settings = $request->get_param( 'woo_storefront_settings' );
+			$brand = is_array( $settings ) && is_array( $settings['branding'] ?? null ) ? $settings['branding'] : array();
+			$old = get_option( 'woo_storefront_settings', array() );
+			$changed = $changed || ( array_key_exists( 'logo', $brand ) && $brand['logo'] !== ( $old['branding']['logo'] ?? '' ) );
+			$colors = is_array( $brand['colors'] ?? null ) ? $brand['colors'] : array();
+			$changed = $changed || ( array_key_exists( 'primary', $colors ) && $colors['primary'] !== ( $old['branding']['colors']['primary'] ?? '#7f54b3' ) );
+		}
+		return $changed ? new \WP_Error( 'source_managed_setting', self::setting_message(), array( 'status' => 403 ) ) : $response;
 	}
 
 	/** Only the declared logo and accent are managed; other shell settings remain editable. */
@@ -161,6 +220,14 @@ final class ManagedProducts {
 
 	public function notice(): void {
 		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only screen selection.
+		$tab = isset( $_GET['tab'] ) && is_string( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'general';
+		if ( $this->store_managed() && $screen && ( 'options-general' === $screen->id || ( 'woocommerce_page_wc-settings' === $screen->id && 'general' === $tab ) ) ) {
+			echo '<div class="notice notice-info"><p><strong>' . esc_html__( 'Managed by your store source.', 'spacefast-commerce' ) . '</strong> ';
+			echo esc_html__( 'Store name, currency, logo, accent and country come from the store source. Edit the source and publish to change them. State, address, taxes and other merchant settings stay editable here.', 'spacefast-commerce' );
+			echo '</p></div>';
+			return;
+		}
 		$id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only notice.
 		$reverted = get_transient( 'spacefast_commerce_managed_notice_' . get_current_user_id() );
 		if ( ! $screen || 'product' !== $screen->post_type || ( '' === self::key( $id ) && ! $reverted ) ) {

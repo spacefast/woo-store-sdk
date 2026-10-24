@@ -57,6 +57,9 @@ until a retry finishes. Post-write apply faults also return `apply-failed`.
 Source fields are protected in native product editing, REST, store settings and the declared
 shipping zone. Other shipping zones remain editable. `stock.initial` seeds new products only;
 stock counts, categories, tax settings and the state part of the store address survive apply.
+REST setting changes return `source_managed_setting` (403), including mixed settings batches
+before any item is saved. The guard follows WordPress's effective setting ID, including body
+parameters. Native General settings explain source ownership and report rejected saves.
 Checkout and account pages have fixed slugs; the storefront owns the cart page. Native shop
 and product pages redirect to the storefront.
 
