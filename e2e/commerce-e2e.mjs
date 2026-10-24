@@ -248,7 +248,7 @@ for (const storage of ['no', 'yes']) {
     await cartRequest('/add-item', { method: 'POST', body: JSON.stringify({ id: context.physicalId, quantity: 1 }) });
     await handoffAgain();
     // Keep the existing cleanup/order-count owner aware of the additional real test purchases.
-    execFileSync('docker', ['exec', '-i', container, 'tee', '/tmp/commerce-m1-context.json'], { input: JSON.stringify(context), stdio: ['pipe', 'ignore', 'inherit'] });
+    execFileSync('docker', ['exec', '-i', '--user', 'www-data', container, 'tee', '/tmp/commerce-m1-context.json'], { input: JSON.stringify(context), stdio: ['pipe', 'ignore', 'inherit'] });
     console.log('PASS: repeated checkout uses current items; payment clears only its unchanged source cart');
   }
   const shippingEdit = new URLSearchParams({ action: 'woocommerce_shipping_zones_save_changes', wc_shipping_zones_nonce: context.shippingNonce });
