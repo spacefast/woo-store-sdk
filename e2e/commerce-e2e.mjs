@@ -363,9 +363,9 @@ if (process.env.COMMERCE_ENGINE_ROOT) {
   docker('exec', container, 'php', '-r', `file_put_contents($argv[1], '<?php $GLOBALS["SPACEFAST_CONTENT_WOO"] = true; require "/tmp/commerce-engine/wordpress/commerce.php";');`, loginFixture);
   try {
     const origin = execFileSync('docker', [...wpArgs, 'option', 'get', 'home'], { encoding: 'utf8' }).trim();
-    for (const action of ['lostpassword', 'rp']) {
+    for (const query of [{ action: 'lostpassword' }, { action: 'rp' }, { action: 'unknown-recovery', key: 'synthetic-key', login: 'missing-user' }]) {
       const url = new URL('/wp-login.php', origin);
-      url.searchParams.set('action', action);
+      url.search = new URLSearchParams(query).toString();
       url.searchParams.set('redirect_to', new URL('/wp-admin/admin.php?page=wc-settings&tab=checkout', origin).href);
       const response = await request(url);
       assert.equal(response.status, 302);
