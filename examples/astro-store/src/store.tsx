@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createBrowserTransport,
   isCheckoutOffInPreview,
@@ -45,8 +46,9 @@ export default function Store({ page }: { page: Page }) {
     createWooQueryClient({ defaultOptions: { queries: { retry: retryStoreQuery } } }),
   );
   const [source, setSource] = useState<CommerceSource | null>(null);
+  const [sourceError, setSourceError] = useState<unknown>(null);
   useEffect(() => {
-    void transport.source().then(setSource);
+    void transport.source().then(setSource, setSourceError);
   }, []);
   return (
     <StoreProvider transport={transport} queryClient={queryClient}>
@@ -55,7 +57,19 @@ export default function Store({ page }: { page: Page }) {
           Preview · Checkout is off in previews.
         </p>
       ) : null}
-      {!source ? (
+      {sourceError ? (
+        <div>
+          <Notice error={sourceError} />
+          <button
+            onClick={() => {
+              setSourceError(null);
+              void transport.source().then(setSource, setSourceError);
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      ) : !source ? (
         <p role="status">Opening the store…</p>
       ) : page === "catalog" ? (
         <Catalog preview={source === "preview"} />
@@ -238,6 +252,7 @@ function Bag() {
 }
 
 function Confirmation() {
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [order, setOrder] = useState<OrderConfirmation | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -250,6 +265,7 @@ function Confirmation() {
     setError(null);
     try {
       setOrder(await transport.order({ id, key, billingEmail: email }));
+      void queryClient.invalidateQueries({ queryKey: ["woo", "cart"] });
     } catch (error) {
       setError(error);
     } finally {
