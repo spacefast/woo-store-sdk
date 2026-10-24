@@ -15,6 +15,7 @@ final class Cli {
 			'apply' => array( self::class, 'apply' ),
 			'disable' => array( self::class, 'disable' ),
 			'mode' => array( self::class, 'mode' ),
+			'origin' => array( self::class, 'origin' ),
 			'status' => array( self::class, 'status' ),
 			'email render' => array( self::class, 'email_render' ),
 		);
@@ -197,6 +198,26 @@ final class Cli {
 	public static function status(): void {
 		$plugin = self::plugin();
 		self::emit( is_wp_error( $plugin ) ? $plugin : $plugin->provisioning->status() );
+	}
+
+	/**
+	 * Change only the canonical origin, preserving payment mode and buyer history.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <origin>
+	 * : The store's production https origin.
+	 *
+	 * [--generation=<generation>]
+	 * : The control-plane mode generation.
+	 *
+	 * [--command-generation=<generation>]
+	 * : The control-plane native command generation.
+	 */
+	public static function origin( array $args, array $assoc ): void {
+		$plugin = self::plugin();
+		$generations = self::generations( $assoc );
+		self::emit( is_wp_error( $plugin ) ? $plugin : ( is_wp_error( $generations ) ? $generations : $plugin->store->set_origin( $args[0] ?? '', $generations['generation'], $generations['command_generation'] ) ) );
 	}
 
 	/**

@@ -18,8 +18,8 @@ Features:
 
 * Fresh, short-lived hosted checkout URLs on Store API cart responses.
 * Isolated guest Cart-Token issuance for server-rendered storefronts.
-* Cart-Token session handoff into a theme-independent Checkout Block shell.
-* Signed post-purchase return URLs.
+* Private guest-cart clones in a theme-independent Checkout Block shell.
+* Signed post-purchase returns restricted to the configured storefront origin.
 * Customer access and refresh JWTs with logout revocation.
 * Customer profile, order, and address endpoints.
 * HMAC-signed catalog revalidation webhooks.
@@ -33,6 +33,11 @@ Features:
 4. Store settings in the `woo_storefront_settings` option or through the WordPress settings REST API.
 
 The settings object accepts `revalidate_url`, `shared_secret`, and a `branding` object with `logo`, `colors`, and `typography`.
+
+Guest checkout uses WooCommerce's native session cloning. Each handoff starts
+from the storefront's current cart. A paid order clears that source cart only
+when it still matches the checkout snapshot; later cart changes are preserved.
+Payment callbacks settle the cart without requiring a confirmation-page visit.
 
 == REST API ==
 

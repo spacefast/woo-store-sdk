@@ -73,6 +73,25 @@ final class Store {
 		return (int) get_option( 'spacefast_commerce_apply_counter', 0 );
 	}
 
+	/** Metadata changes must never change payment mode or cancel test orders. */
+	public function set_origin( string $origin, ?int $generation = null, ?int $command_generation = null ): array|\WP_Error {
+		$origin = self::normalize_origin( $origin );
+		if ( is_wp_error( $origin ) ) {
+			return $origin;
+		}
+		return $this->with_lock( function () use ( $origin, $generation, $command_generation ): array|\WP_Error {
+			$fence = $this->accept_command( $generation, $command_generation );
+			if ( is_wp_error( $fence ) ) {
+				return $fence;
+			}
+			$this->set_canonical_origin( $origin );
+			if ( $origin !== $this->canonical_origin() ) {
+				return Bundle::refuse( 'mode-unavailable', 'The store origin could not be saved. Retry when the store database is available.' );
+			}
+			return array( 'ok' => true, 'canonicalOrigin' => $origin );
+		} );
+	}
+
 	/** The counter only ever grows; it is stamped before the first write of an apply. */
 	public function next_counter(): int {
 		$next = $this->counter() + 1;
