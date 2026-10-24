@@ -1,0 +1,8 @@
+---
+import Shop from '../layouts/Shop.astro'
+import Store from '../store'
+---
+<Shop>
+  <section class="intro"><p class="eyebrow">Small books. Wide open spaces.</p><h1>A good reason<br />to go outside.</h1><p>For the wandering, the wondering, and the long way home.</p></section>
+  <Store page="catalog" client:only="react"><p slot="fallback" role="status">Opening the bookshop…</p></Store>
+</Shop>

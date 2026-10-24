@@ -29,6 +29,7 @@ export {
   createWooQueryClient,
   StoreProvider,
   type StoreProviderProps,
+  type StoreTransport,
 } from './provider'
 export {
   deserializeRpcResponse,

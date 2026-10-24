@@ -7,3 +7,6 @@ coverage/
 .spacefast/
 vendor/
 .pnpm-store/
+
+# Generated Astro types and content cache.
+.astro/

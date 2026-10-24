@@ -1,0 +1,173 @@
+{
+  "id": 21,
+  "status": "processing",
+  "items": [
+    {
+      "key": "wc_order_bmaLktXNsGw2F",
+      "id": 1,
+      "quantity": 2,
+      "quantity_limits": {
+        "minimum": 2,
+        "maximum": 2,
+        "multiple_of": 1,
+        "editable": false
+      },
+      "name": "The Field Guide (paperback)",
+      "short_description": "<p>Printed on recycled paper.</p>",
+      "description": "<p>A practical guide to reading the land.</p>",
+      "sku": "field-guide-print",
+      "low_stock_remaining": null,
+      "backorders_allowed": false,
+      "show_backorder_badge": false,
+      "sold_individually": false,
+      "permalink": "http://localhost:8890/product/the-field-guide-paperback/",
+      "images": [],
+      "variation": [],
+      "item_data": [],
+      "prices": {
+        "price": "2900",
+        "regular_price": "2900",
+        "sale_price": "2900",
+        "price_range": null,
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ".",
+        "currency_thousand_separator": ",",
+        "currency_prefix": "€",
+        "currency_suffix": "",
+        "raw_prices": {
+          "precision": 6,
+          "price": "29000000",
+          "regular_price": "29000000",
+          "sale_price": "29000000"
+        }
+      },
+      "totals": {
+        "line_subtotal": "5800",
+        "line_subtotal_tax": "0",
+        "line_total": "5800",
+        "line_total_tax": "0",
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ".",
+        "currency_thousand_separator": ",",
+        "currency_prefix": "€",
+        "currency_suffix": ""
+      },
+      "catalog_visibility": "visible"
+    },
+    {
+      "key": "wc_order_bmaLktXNsGw2F",
+      "id": 2,
+      "quantity": 1,
+      "quantity_limits": {
+        "minimum": 1,
+        "maximum": 1,
+        "multiple_of": 1,
+        "editable": false
+      },
+      "name": "The Field Guide (ebook)",
+      "short_description": "<p>PDF and EPUB, 180 pages.</p>",
+      "description": "<p>A practical guide to reading the land.</p>",
+      "sku": "field-guide-ebook",
+      "low_stock_remaining": null,
+      "backorders_allowed": false,
+      "show_backorder_badge": false,
+      "sold_individually": true,
+      "permalink": "http://localhost:8890/product/the-field-guide-ebook/",
+      "images": [],
+      "variation": [],
+      "item_data": [],
+      "prices": {
+        "price": "1200",
+        "regular_price": "1200",
+        "sale_price": "1200",
+        "price_range": null,
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ".",
+        "currency_thousand_separator": ",",
+        "currency_prefix": "€",
+        "currency_suffix": "",
+        "raw_prices": {
+          "precision": 6,
+          "price": "12000000",
+          "regular_price": "12000000",
+          "sale_price": "12000000"
+        }
+      },
+      "totals": {
+        "line_subtotal": "1200",
+        "line_subtotal_tax": "0",
+        "line_total": "1200",
+        "line_total_tax": "0",
+        "currency_code": "EUR",
+        "currency_symbol": "€",
+        "currency_minor_unit": 2,
+        "currency_decimal_separator": ".",
+        "currency_thousand_separator": ",",
+        "currency_prefix": "€",
+        "currency_suffix": ""
+      },
+      "catalog_visibility": "visible"
+    }
+  ],
+  "coupons": [],
+  "fees": [],
+  "totals": {
+    "subtotal": "7000",
+    "total_discount": "0",
+    "total_shipping": "1500",
+    "total_fees": "0",
+    "total_tax": "0",
+    "total_refund": "0",
+    "total_price": "8500",
+    "total_items": "7000",
+    "total_items_tax": "0",
+    "total_fees_tax": "0",
+    "total_discount_tax": "0",
+    "total_shipping_tax": "0",
+    "tax_lines": [],
+    "currency_code": "EUR",
+    "currency_symbol": "€",
+    "currency_minor_unit": 2,
+    "currency_decimal_separator": ".",
+    "currency_thousand_separator": ",",
+    "currency_prefix": "€",
+    "currency_suffix": ""
+  },
+  "shipping_address": {
+    "first_name": "Ada",
+    "last_name": "Reader",
+    "company": "",
+    "address_1": "Ul. Prosta 1",
+    "address_2": "",
+    "city": "Warszawa",
+    "state": "",
+    "postcode": "00-001",
+    "country": "PL",
+    "phone": ""
+  },
+  "billing_address": {
+    "first_name": "Ada",
+    "last_name": "Reader",
+    "company": "",
+    "address_1": "Ul. Prosta 1",
+    "address_2": "",
+    "city": "Warszawa",
+    "state": "",
+    "postcode": "00-001",
+    "country": "PL",
+    "email": "ada@example.com",
+    "phone": ""
+  },
+  "needs_payment": false,
+  "needs_shipping": true,
+  "payment_requirements": [
+    "products"
+  ],
+  "errors": []
+}

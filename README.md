@@ -8,6 +8,7 @@ Customer registration follows WooCommerce's account-registration setting. When i
 
 - `@woo/storefront-core` — typed Store API client and framework-neutral sessions
 - `@woo/storefront-react` — React hooks and providers
+- `@woo/storefront-browser` — serverless browser adapter for the React hooks (Store API + `Cart-Token` in `sessionStorage`)
 - `@woo/storefront-next` — Next.js server sessions, RPC handlers, and cache helpers
 - `@woo/storefront-start` — TanStack Start adapter
 - `woo-storefront` — setup and verification CLI
@@ -27,6 +28,17 @@ pnpm dev:shop
 ```
 
 See the example README for environment variables and verification commands.
+
+## Astro proof store
+
+[`examples/astro-store`](./examples/astro-store) is a static Astro store: React islands on `@woo/storefront-browser`, its own `/cart/` and order confirmation pages, and a Spacefast Woo-backend declaration (`sf.jsonc`, `sell/products.json`, `_emails/`).
+
+```bash
+pnpm build
+pnpm --filter woo-astro-store build
+```
+
+`node e2e/browser-adapter-e2e.mjs` runs the adapter against a real Woo (a `deploy/woo` container seeded by `e2e/seed-proof-store.sh`).
 
 ## Deployment
 
