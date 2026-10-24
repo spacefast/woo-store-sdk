@@ -229,9 +229,10 @@ for (const storage of ['no', 'yes']) {
     const changed = await (await cartRequest('/add-item', { method: 'POST', body: JSON.stringify({ id: context.physicalId, quantity: 2 }) })).json();
     await handoffAgain();
     const paper = changed.items.find((item) => item.id === context.physicalId);
-    const newer = await (await cartRequest('/update-item', { method: 'POST', body: JSON.stringify({ key: paper.key, quantity: 1 }) })).json();
+    await cartRequest('/update-item', { method: 'POST', body: JSON.stringify({ key: paper.key, quantity: 1 }) });
+    const newer = await (await cartRequest('/update-item', { method: 'POST', body: JSON.stringify({ key: paper.key, quantity: 2 }) })).json();
     const paid = await pay();
-    assert.deepEqual((await (await cartRequest()).json()).items.map(({ id, quantity }) => ({ id, quantity })), newer.items.map(({ id, quantity }) => ({ id, quantity })), 'Payment erased a newer source cart');
+    assert.deepEqual((await (await cartRequest()).json()).items.map(({ id, quantity }) => ({ id, quantity })), newer.items.map(({ id, quantity }) => ({ id, quantity })), 'Payment erased a newer source cart with identical contents');
     // An old payment notification cannot erase that later cart if it returns to the original contents.
     await cartRequest('/update-item', { method: 'POST', body: JSON.stringify({ key: paper.key, quantity: 2 }) });
     wp('eval', `do_action('woocommerce_payment_complete', ${paid});`);
