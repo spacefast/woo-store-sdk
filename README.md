@@ -2,6 +2,8 @@
 
 Woo Store SDK is a typed, framework-friendly storefront client for WooCommerce. It provides catalog queries, cart-token sessions, hosted checkout, customer accounts, and adapters for React, Next.js, and TanStack Start.
 
+Customer registration follows WooCommerce's account-registration setting. When it is off, the public signup endpoint returns 403 and creates no customer.
+
 ## Packages
 
 - `@woo/storefront-core` — typed Store API client and framework-neutral sessions
@@ -51,5 +53,7 @@ dynamic local ports. `COMMERCE_FIXTURE_READY` reports its container and origins;
 `node e2e/commerce-fixture.mjs down` removes that named project and its volumes.
 Set `COMMERCE_ENGINE_ROOT` to a Spacefast `runtime/engine` directory to also prove
 the companion against the real engine's request principal and capability filters.
+This includes the pinned Stripe plugin's settings read/write permissions without
+`manage_options`, and refusal of those routes for an editor principal.
 See [the companion reference](plugin/spacefast-commerce/TECHNICAL.md) for commands,
 source-field ownership, modes, portable host setup and release packaging.

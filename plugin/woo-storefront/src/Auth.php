@@ -173,6 +173,10 @@ final class Auth {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function register_customer( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		if ( 'yes' !== get_option( 'woocommerce_enable_myaccount_registration', 'no' ) ) {
+			return $this->error( 'woo_storefront_registration_disabled', __( 'Customer account creation is off for this store.', 'woo-storefront' ), 403 );
+		}
+
 		$email      = sanitize_email( (string) $request->get_param( 'email' ) );
 		$password   = (string) $request->get_param( 'password' );
 		$first_name = sanitize_text_field( (string) $request->get_param( 'firstName' ) );

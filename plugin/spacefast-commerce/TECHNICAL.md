@@ -25,6 +25,7 @@ wp spacefast-commerce disable
 wp spacefast-commerce status
 wp spacefast-commerce mode test
 wp spacefast-commerce mode live
+wp spacefast-commerce origin https://shop.example
 wp spacefast-commerce email render 123 customer_completed_order
 ```
 
@@ -37,7 +38,7 @@ held files can be omitted. No store identity, credentials or test/live mode belo
 
 Apply refuses removals, SKU conflicts, currency changes under products/orders, invalid images,
 invalid email templates and missing/corrupt files before changing the catalog or counter.
-A MySQL named lock serializes apply, disable and mode changes. An infrastructure failure during writes
+A MySQL named lock serializes setup, apply, disable, origin and mode changes. An infrastructure failure during writes
 requires retrying the same bundle; apply repairs native drift and updates stable identities.
 
 Without a baseline flag, every previously managed product is in the removal baseline.
@@ -56,12 +57,22 @@ until a retry finishes. Post-write apply faults also return `apply-failed`.
 Source fields are protected in native product editing, REST, store settings and the declared
 shipping zone. Other shipping zones remain editable. `stock.initial` seeds new products only;
 stock counts, categories, tax settings and the state part of the store address survive apply.
+REST setting changes return `source_managed_setting` (403), including mixed settings batches
+before any item is saved. The guard follows WordPress's effective setting ID, including body
+parameters. Native General settings explain source ownership and report rejected saves.
 Checkout and account pages have fixed slugs; the storefront owns the cart page. Native shop
 and product pages redirect to the storefront.
 
 Digital products use a stable download ID per source key. Replacing an asset updates the file
 for existing buyers while preserving their native grants, expiry and remaining downloads.
 Bytes live outside the web root; WooCommerce authorizes and transfers them.
+Physical targets with existing buyer download grants refuse before writes; keep
+the digital key and declare a separate physical key. An unavailable native
+permissions datastore returns `downloads-unavailable` rather than authorizing removal.
+
+The origin command updates canonical links without changing payment mode or
+running order cleanup. It uses the same `--generation` and `--command-generation`
+fence as mode and catalog writes.
 
 ## Modes and emails
 
@@ -83,10 +94,15 @@ Layouts must begin with `<!doctype html>`, fit within 100 KiB and contain no scr
 event handlers, JavaScript URLs or other `sf-*` slots. Stored HTML is data and is never
 executed. Woo keeps native triggers, recipients, subjects, headings, CSS inlining and text mail.
 All links use the canonical origin, including sends from cron and WP-CLI without a request host.
+Bindings are selected after Woo's cached template lookup, so adding or removing a layout takes
+effect on the next render without retaining an earlier native or source-owned template path.
 
 On Spacefast, the companion extends the engine's request principal with named Woo capabilities.
 It grants no plugin/theme installation, user administration or `manage_options`, and password
-sign-in is disabled. On ordinary WordPress hosts, native administrator authentication remains.
+sign-in and password recovery are disabled. Login and recovery screens point shoppers to
+their order links. Core and Woo reset submissions receive the same refusal for known and
+unknown accounts, without issuing a reset key. Ordinary WordPress hosts retain native
+administrator authentication and account recovery.
 
 ## Verification and packaging
 

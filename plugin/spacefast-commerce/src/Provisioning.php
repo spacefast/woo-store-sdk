@@ -8,6 +8,11 @@ final class Provisioning {
 	public function __construct( private Plugin $plugin ) {}
 
 	public function setup(): array|\WP_Error {
+		return $this->plugin->store->with_lock( fn (): array|\WP_Error => $this->setup_locked() );
+	}
+
+	/** Setup repairs the same pages/options as apply, so it shares the native writer lock. */
+	private function setup_locked(): array|\WP_Error {
 		if ( ! get_option( 'woocommerce_db_version' ) ) {
 			\WC_Install::install();
 		}

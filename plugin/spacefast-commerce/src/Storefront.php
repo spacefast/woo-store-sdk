@@ -46,13 +46,22 @@ final class Storefront {
 		foreach ( self::PAGES as $page ) {
 			add_filter( 'pre_update_option_' . $page['option'], fn ( mixed $value, mixed $old ): mixed => $this->managed->applying() ? $value : $old, 10, 2 );
 		}
+		add_filter( 'pre_update_option_woocommerce_cart_page_id', fn ( mixed $value, mixed $old ): mixed => $this->managed->applying() ? $value : $old, 10, 2 );
 		add_filter( 'wp_insert_post_data', array( $this, 'guard_page' ), 10, 2 );
 		add_filter( 'pre_trash_post', array( $this, 'guard_delete' ), 10, 2 );
 		add_filter( 'pre_delete_post', array( $this, 'guard_delete' ), 10, 2 );
 		add_filter( 'woocommerce_get_cart_url', fn (): string => $this->store->url( '/cart/' ) );
+		add_filter( 'wc_get_template', array( $this, 'account_login_template' ), 10, 2 );
 		add_filter( 'post_type_link', array( $this, 'product_link' ), 10, 2 );
 		add_action( 'template_redirect', array( $this, 'redirect' ), 2 );
 		add_action( 'template_redirect', array( $this, 'not_found' ), 99 );
+	}
+
+	/** Guest shoppers need their order links; hosts that allow passwords keep Woo's login. */
+	public function account_login_template( string $template, string $name ): string {
+		return in_array( $name, array( 'myaccount/form-login.php', 'myaccount/form-lost-password.php', 'myaccount/form-reset-password.php' ), true ) && MerchantAccess::password_login_disabled()
+			? dirname( __DIR__ ) . '/templates/guest-account.php'
+			: $template;
 	}
 
 	private function page_id( array $page ): int {
@@ -97,7 +106,10 @@ final class Storefront {
 				$post = $id ? get_post( $id ) : null;
 				$content = $post && 'page' === $post->post_type && $this->valid_content( $page, $post->post_content )
 					? $post->post_content
-					: ( 'checkout' === $name ? \WC_Install::get_checkout_block_content() : '<!-- wp:shortcode -->[woocommerce_my_account]<!-- /wp:shortcode -->' );
+					: ( 'checkout' === $name
+						// Woo 11.2 keeps its canonical nested checkout markup in a protected factory.
+						? (string) ( new \ReflectionMethod( \WC_Install::class, 'get_checkout_block_content' ) )->invoke( null )
+						: '<!-- wp:shortcode -->[woocommerce_my_account]<!-- /wp:shortcode -->' );
 				$fields = array(
 					'post_type' => 'page',
 					'post_status' => 'publish',
@@ -117,7 +129,10 @@ final class Storefront {
 				update_option( $page['option'], (int) $result );
 			}
 			$cart = (int) get_option( 'woocommerce_cart_page_id', 0 );
-			if ( $cart > 0 && get_post( $cart ) ) {
+			$post = $cart > 0 ? get_post( $cart ) : null;
+			$managed_pages = array_map( fn ( array $page ): int => $this->page_id( $page ), self::PAGES );
+			if ( $post && 'page' === $post->post_type && ! in_array( $cart, $managed_pages, true ) &&
+				'cart' === $post->post_name && ( has_block( 'woocommerce/cart', $post->post_content ) || has_shortcode( $post->post_content, 'woocommerce_cart' ) ) ) {
 				wp_delete_post( $cart, true );
 			}
 			update_option( 'woocommerce_cart_page_id', 0 );

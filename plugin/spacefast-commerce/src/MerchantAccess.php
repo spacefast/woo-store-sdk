@@ -41,6 +41,8 @@ final class MerchantAccess {
 	public function register(): void {
 		add_filter( 'user_has_cap', array( $this, 'store_caps' ), 20, 4 );
 		add_filter( 'authenticate', array( $this, 'refuse_password' ), 99, 3 );
+		add_action( 'lostpassword_post', array( $this, 'refuse_password_reset' ), 99 );
+		add_action( 'validate_password_reset', array( $this, 'refuse_password_reset' ), 99 );
 	}
 
 	public static function caps(): array {
@@ -62,11 +64,26 @@ final class MerchantAccess {
 	 * D20: on Spacefast the merchant signs in through Spacefast, never with a WordPress password.
 	 * Only on the Spacefast engine: on an M2 host, a password is how the site owner gets in.
 	 */
+	public static function password_login_disabled(): bool {
+		return (bool) apply_filters( 'spacefast_commerce_refuse_password_login', function_exists( 'spacefast_content_principal_ensure_user' ) );
+	}
+
 	public function refuse_password( mixed $user, mixed $username, mixed $password ): mixed {
-		$refuse = apply_filters( 'spacefast_commerce_refuse_password_login', function_exists( 'spacefast_content_principal_ensure_user' ) );
-		if ( ! $refuse || ! is_string( $password ) || '' === $password ) {
+		if ( ! self::password_login_disabled() || ! is_string( $password ) || '' === $password ) {
 			return $user;
 		}
 		return new \WP_Error( 'spacefast_password_login_disabled', __( 'Password sign-in is off for this store. Sign in through Spacefast.', 'spacefast-commerce' ) );
+	}
+
+	/** Both core and Woo inspect this shared error object before issuing or accepting a reset. */
+	public function refuse_password_reset( \WP_Error $errors ): void {
+		if ( ! self::password_login_disabled() ) {
+			return;
+		}
+		// Core may already have added an unknown-email error. Keep the refusal identical for every account.
+		foreach ( $errors->get_error_codes() as $code ) {
+			$errors->remove( $code );
+		}
+		$errors->add( 'spacefast_password_login_disabled', __( 'Password sign-in is off for this store. Sign in through Spacefast.', 'spacefast-commerce' ) );
 	}
 }

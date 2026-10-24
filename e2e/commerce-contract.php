@@ -139,14 +139,47 @@ wp_set_current_user( $administrator->ID );
 $request = new WP_REST_Request( 'PUT', '/wc/v3/products/' . $book_id );
 $request->set_param( 'regular_price', '99.00' );
 commerce_check( 403 === rest_do_request( $request )->get_status(), 'Native REST edited a source field.' );
+$request = new WP_REST_Request( 'PUT', '/wc/v3/settings/general/woocommerce_calc_taxes' );
+// WordPress body parameters can override the URL's setting selector.
+$request->set_body_params( array( 'id' => 'woocommerce_currency', 'value' => 'EUR' ) );
+$managed_setting = rest_do_request( $request );
+commerce_check( 403 === $managed_setting->get_status() && 'source_managed_setting' === ( $managed_setting->get_data()['code'] ?? null ) && 'USD' === get_woocommerce_currency(), 'Native REST reported success for a rejected source-managed store setting; status=' . $managed_setting->get_status() . ', reported=' . ( $managed_setting->get_data()['value'] ?? '' ) );
+$tax_before = get_option( 'woocommerce_calc_taxes' );
+foreach ( array( '/wc/v3/settings/general/batch', '/wc/v3/settings/batch' ) as $settings_batch ) {
+	$request = new WP_REST_Request( 'POST', $settings_batch );
+	$request->set_param( 'update', array( array( 'group_id' => 'general', 'id' => 'woocommerce_currency', 'value' => 'EUR' ), array( 'group_id' => 'general', 'id' => 'woocommerce_calc_taxes', 'value' => 'yes' === $tax_before ? 'no' : 'yes' ) ) );
+	$managed_batch = rest_do_request( $request );
+	commerce_check( 403 === $managed_batch->get_status() && 'source_managed_setting' === ( $managed_batch->get_data()['code'] ?? null ) && $tax_before === get_option( 'woocommerce_calc_taxes' ), 'Native settings batch bypassed source refusal or partially saved a refused request; route=' . $settings_batch . ', status=' . $managed_batch->get_status() );
+}
+$request = new WP_REST_Request( 'POST', '/wp/v2/settings' );
+$rest_brand_before = get_option( 'woo_storefront_settings' );
+$request->set_param( 'woo_storefront_settings', array( 'branding' => array( 'logo' => 'https://other.example/logo.png' ) ) );
+$managed_brand = rest_do_request( $request );
+commerce_check( 403 === $managed_brand->get_status() && 'source_managed_setting' === ( $managed_brand->get_data()['code'] ?? null ) && $rest_brand_before === get_option( 'woo_storefront_settings' ), 'WordPress REST did not explain source-managed branding refusal; status=' . $managed_brand->get_status() . ', code=' . ( $managed_brand->get_data()['code'] ?? '' ) );
+require_once ABSPATH . 'wp-admin/includes/class-wp-screen.php';
+require_once ABSPATH . 'wp-admin/includes/screen.php';
+set_current_screen( 'woocommerce_page_wc-settings' );
+$_GET['page'] = 'wc-settings';
+$_GET['tab'] = 'general';
+ob_start();
+$plugin->managed->notice();
+$managed_notice = ob_get_clean();
+commerce_check( str_contains( $managed_notice, 'Managed by your store source.' ) && str_contains( $managed_notice, 'currency' ), 'Native store settings do not explain source ownership.' );
 $request = new WP_REST_Request( 'DELETE', '/wc/v3/shipping/zones/' . $plugin->shipping->zone_id() );
 commerce_check( 403 === rest_do_request( $request )->get_status(), 'Native REST deleted the source shipping zone.' );
 $brand = get_option( 'woo_storefront_settings' );
+commerce_check( '#000000' === WooStorefront\Branding::button_text_color( '#fff' ) && '#ffffff' === WooStorefront\Branding::button_text_color( '#234' ), 'Checkout button text does not contrast with light and dark source accents.' );
 update_option( 'blogname', 'Browser title' );
 update_option( 'woocommerce_currency', 'EUR' );
 update_option( 'woocommerce_default_country', 'DE:BE' );
 update_option( 'woo_storefront_settings', array( 'branding' => array( 'logo' => 'https://other.example/logo.png', 'colors' => array( 'primary' => '#ff0000' ) ) ) );
 commerce_check( 'M1 contract shop' === get_option( 'blogname' ) && 'USD' === get_woocommerce_currency() && 'US' === explode( ':', get_option( 'woocommerce_default_country' ) )[0] && $brand['branding']['logo'] === get_option( 'woo_storefront_settings' )['branding']['logo'] && '#345678' === get_option( 'woo_storefront_settings' )['branding']['colors']['primary'], 'A native settings save edited declared store fields.' );
+ob_start();
+WC_Admin_Settings::show_messages();
+$managed_errors = ob_get_clean();
+commerce_check( str_contains( $managed_errors, 'managed by your store source' ), 'Native settings save silently ignored source-managed changes.' );
+set_current_screen( null );
+unset( $_GET['page'], $_GET['tab'] );
 $product = wc_get_product( $print_id );
 $product->set_name( 'Browser edit' );
 $product->set_regular_price( '99.00' );
@@ -158,8 +191,10 @@ commerce_check( 'Printed guide' === wc_get_product( $print_id )->get_name() && '
 commerce_check( false === wp_delete_post( $book_id, true ), 'Managed product history could be deleted.' );
 wp_set_object_terms( $print_id, 'variable', 'product_type' );
 commerce_check( array( 'simple' ) === wp_get_object_terms( $print_id, 'product_type', array( 'fields' => 'slugs' ) ), 'Native taxonomy edit changed the declared product type.' );
+$request = new WP_REST_Request( 'PUT', '/wc/v3/settings/general/woocommerce_default_country' );
+$request->set_param( 'value', 'US:CA' );
+commerce_check( 200 === rest_do_request( $request )->get_status() && 'US:CA' === get_option( 'woocommerce_default_country' ), 'Managed country blocked the merchant-owned state.' );
 wp_set_current_user( 0 );
-update_option( 'woocommerce_default_country', 'US:CA' );
 update_option( 'woocommerce_calc_taxes', 'yes' );
 $store['products'][1]['stock']['initial'] = 80;
 $store['products'][0]['name'] = 'Revised field guide';
@@ -198,7 +233,80 @@ WC()->cart->calculate_totals();
 commerce_check( array() === WC()->shipping()->get_packages()[0]['rates'], 'An undeclared destination received a managed shipping rate.' );
 WC()->cart->empty_cart();
 commerce_check( wc_get_page_id( 'cart' ) < 1 && 'checkout' === get_post_field( 'post_name', wc_get_page_id( 'checkout' ) ) && 'my-account' === get_post_field( 'post_name', wc_get_page_id( 'myaccount' ) ), 'Fixed pages and cart ownership failed.' );
+
+// A stale or direct database assignment is not authority to delete arbitrary merchant pages.
+$ordinary_page = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Merchant information', 'post_content' => 'Keep this merchant content.' ), true );
+commerce_check( is_int( $ordinary_page ), 'Could not create merchant page.' );
+$checkout_page = wc_get_page_id( 'checkout' );
+foreach ( array( $ordinary_page, $checkout_page ) as $cart_assignment ) {
+	$plugin->managed->apply( static fn () => update_option( 'woocommerce_cart_page_id', $cart_assignment ) );
+	commerce_result( $plugin->provisioning->setup() );
+	commerce_check( get_post( $cart_assignment ) instanceof WP_Post && 0 === (int) get_option( 'woocommerce_cart_page_id' ), 'Setup deleted a page merely because the cart option referenced it.' );
+}
+update_option( 'woocommerce_cart_page_id', $ordinary_page );
+commerce_check( 0 === (int) get_option( 'woocommerce_cart_page_id' ), 'Merchant settings reassigned the cart page.' );
+wp_delete_post( $ordinary_page, true );
+// Simulate a plugin/SQL write that bypasses the managed-page guard. Woo's
+// canonical checkout factory is protected in 11.2; repair must still work.
+$checkout_id = wc_get_page_id( 'checkout' );
+$wpdb->update( $wpdb->posts, array( 'post_content' => 'Broken checkout content' ), array( 'ID' => $checkout_id ) );
+clean_post_cache( $checkout_id );
+commerce_result( $plugin->catalog->apply( commerce_bundle( $store ), $options ) );
+commerce_check( has_block( 'woocommerce/checkout-contact-information-block', get_post_field( 'post_content', $checkout_id ) ), 'Checkout repair did not restore the native form blocks.' );
 commerce_check( 'no' === get_option( 'woocommerce_enable_myaccount_registration' ) && 'yes' === get_option( 'woocommerce_enable_guest_checkout' ), 'Native checkout created a customer signup path.' );
+$signup_email = 'blocked-' . wp_generate_uuid4() . '@example.test';
+$signup = new WP_REST_Request( 'POST', '/woo-storefront/v1/auth/register' );
+$signup->set_param( 'email', $signup_email );
+$signup->set_param( 'password', 'disposable-registration-probe' );
+$signup_response = rest_do_request( $signup );
+$created_customer = get_user_by( 'email', $signup_email );
+if ( $created_customer ) {
+	require_once ABSPATH . 'wp-admin/includes/user.php';
+	wp_delete_user( $created_customer->ID );
+}
+commerce_check( 403 === $signup_response->get_status() && 'woo_storefront_registration_disabled' === ( $signup_response->get_data()['code'] ?? null ) && false === $created_customer, 'Disabled registration created a customer or returned the wrong refusal: ' . $signup_response->get_status() );
+$enable_registration = static fn() => 'yes';
+add_filter( 'pre_option_woocommerce_enable_myaccount_registration', $enable_registration, PHP_INT_MAX );
+try {
+	$signup_response = rest_do_request( $signup );
+	$created_customer = get_user_by( 'email', $signup_email );
+	commerce_check( 201 === $signup_response->get_status() && $created_customer instanceof WP_User, 'Explicitly enabled registration did not create its customer.' );
+} finally {
+	remove_filter( 'pre_option_woocommerce_enable_myaccount_registration', $enable_registration, PHP_INT_MAX );
+	if ( $created_customer instanceof WP_User ) {
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		wp_delete_user( $created_customer->ID );
+	}
+	wp_set_current_user( 0 );
+}
+$account_document = new DOMDocument();
+commerce_check( $account_document->loadHTML( wc_get_template_html( 'myaccount/form-login.php' ), LIBXML_NOERROR | LIBXML_NOWARNING ), 'Native account view did not render.' );
+commerce_check( 1 === ( new DOMXPath( $account_document ) )->query( '//input[@type="password"]' )->length, 'A host that permits passwords lost its native login.' );
+commerce_check( $account_document->loadHTML( wc_get_template_html( 'myaccount/form-lost-password.php' ), LIBXML_NOERROR | LIBXML_NOWARNING ) && 1 === ( new DOMXPath( $account_document ) )->query( '//form' )->length, 'A host that permits passwords lost its native recovery form.' );
+add_filter( 'spacefast_commerce_refuse_password_login', '__return_true' );
+try {
+	foreach ( array( 'myaccount/form-login.php', 'myaccount/form-lost-password.php', 'myaccount/form-reset-password.php' ) as $account_template ) {
+		commerce_check( $account_document->loadHTML( wc_get_template_html( $account_template ), LIBXML_NOERROR | LIBXML_NOWARNING ), 'Guest account view did not render.' );
+		$account_nodes = new DOMXPath( $account_document );
+		commerce_check( 0 === $account_nodes->query( '//form' )->length && 'No account needed' === $account_nodes->query( '//h1' )->item( 0 )?->textContent && $plugin->store->url( '/' ) === $account_nodes->query( '//a' )->item( 0 )?->getAttribute( 'href' ), 'Password-disabled shoppers saw a password form or lost their store link: ' . $account_template );
+	}
+	$activation_key = get_userdata( $administrator->ID )->user_activation_key;
+	foreach ( array( $administrator->user_email, 'missing-reset-' . wp_generate_uuid4() . '@example.test' ) as $reset_login ) {
+		$reset = retrieve_password( $reset_login );
+		commerce_check( is_wp_error( $reset ) && array( 'spacefast_password_login_disabled' ) === $reset->get_error_codes(), 'Core password reset exposed account existence or sent a reset.' );
+		$_POST['user_login'] = $reset_login;
+		wc_clear_notices();
+		commerce_check( false === WC_Shortcode_My_Account::retrieve_password() && array( 'Password sign-in is off for this store. Sign in through Spacefast.' ) === array_column( wc_get_notices( 'error' ), 'notice' ), 'Woo password reset exposed account existence or sent a reset.' );
+	}
+	commerce_check( $activation_key === get_userdata( $administrator->ID )->user_activation_key, 'A refused password reset minted a key.' );
+	$reset_errors = new WP_Error();
+	do_action( 'validate_password_reset', $reset_errors, $administrator );
+	commerce_check( array( 'spacefast_password_login_disabled' ) === $reset_errors->get_error_codes(), 'An existing reset key could still change a password.' );
+	unset( $_POST['user_login'] );
+	wc_clear_notices();
+} finally {
+	remove_filter( 'spacefast_commerce_refuse_password_login', '__return_true' );
+}
 commerce_check( 'https://store.example.test/books/field-guide/' === get_permalink( $book_id ), 'Native product link did not point to the storefront page.' );
 
 $make_order = static function ( bool $interrupted ) use ( $book_id, $print_id, $key ): WC_Order {
@@ -233,6 +341,11 @@ commerce_result( $plugin->catalog->apply( commerce_bundle( $store, array( $repla
 $after = current( wc_get_order( $order->get_id() )->get_downloadable_items() );
 commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ) && $download['download_id'] === $after['download_id'] && PrivateFiles::download_id( $digital['key'] ) === $after['download_id'], 'Asset replacement changed previous buyer grants.' );
 commerce_check( $replacement === file_get_contents( $after['file']['file'] ), 'Previous buyer did not receive the current source asset.' );
+$physical_conversion = $store;
+$physical_conversion['products'][0]['kind'] = 'physical';
+$physical_conversion['products'][0]['asset'] = null;
+$refuse( $physical_conversion, 'download-retained' );
+commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ) && 1 === count( wc_get_order( $order->get_id() )->get_downloadable_items() ), 'A digital-to-physical refusal revoked an earlier buyer download.' );
 commerce_check( 'Revised field guide' === current( $order->get_items() )->get_name(), 'Apply rewrote a purchased order line.' );
 
 // Query failure is not an empty store, for either native order datastore.
@@ -266,6 +379,20 @@ try {
 }
 commerce_check( $order_count_before_fault === SpacefastCommerce\Orders::count(), 'Order history did not recover after the database was restored.' );
 
+// Download history has its own datastore and must also fail closed before an apply writes.
+$downloads_table = $wpdb->prefix . 'woocommerce_downloadable_product_permissions';
+$held_downloads = $downloads_table . '_held';
+$suppress_errors_before_fault = $wpdb->suppress_errors( true );
+commerce_check( false !== $wpdb->query( $wpdb->prepare( 'RENAME TABLE %i TO %i', $downloads_table, $held_downloads ) ), 'Could not isolate disposable download permissions.' );
+try {
+	$refuse( $physical_conversion, 'downloads-unavailable' );
+} finally {
+	$restored_downloads = $wpdb->query( $wpdb->prepare( 'RENAME TABLE %i TO %i', $held_downloads, $downloads_table ) );
+	$wpdb->suppress_errors( $suppress_errors_before_fault );
+	commerce_check( false !== $restored_downloads, 'Restore the disposable download permissions.' );
+}
+commerce_check( $before_permissions === wp_json_encode( commerce_permissions( $order->get_id() ) ), 'Download history did not survive a datastore read failure.' );
+
 // A move away from Woo may stop sales, but it cannot erase purchased entitlements.
 $native_before_disable = array( 'hash' => $plugin->store->store_hash(), 'counter' => $plugin->store->counter(), 'mode' => $plugin->store->mode(), 'orders' => SpacefastCommerce\Orders::count(), 'stock' => wc_get_product( $print_id )->get_stock_quantity() );
 $unmanaged = new WC_Product_Simple();
@@ -292,10 +419,36 @@ commerce_check( $book_id === wc_get_product_id_by_sku( $digital['key'] ) && 'pub
 $unmanaged->delete( true );
 
 unset( $_SERVER['HTTP_HOST'] );
-foreach ( array_keys( $store['emails'] ) as $email_id ) {
-	$rendered = commerce_result( $plugin->emails->render_order( $order->get_id(), $email_id ) );
-	commerce_check( str_contains( $rendered['html'], 'Test order' ) && str_contains( $rendered['html'], 'https://store.example.test/brand.png' ) && ! str_contains( $rendered['html'], '<sf-' ), 'Native trigger omitted template, canonical URL, slot contents or test banner.' );
-	commerce_check( ! str_contains( $rendered['html'], get_option( 'home' ) ) && ( 'new_order' === $email_id || str_contains( $rendered['html'], 'download_file=' ) ), 'Native email download used a request host instead of canonical origin.' );
+$plugin->emails->store( array() );
+try {
+	$native_email = commerce_result( $plugin->emails->render_order( $order->get_id(), 'customer_processing_order' ) );
+	commerce_check( str_contains( $native_email['html'], current( $order->get_items() )->get_name() ) && ! str_contains( $native_email['html'], 'https://store.example.test/brand.png' ), 'Removing an email binding did not restore native content under a warm template cache.' );
+} finally {
+	$plugin->emails->store( $store['emails'] );
+}
+$mailer = WC()->mailer();
+$previous_emails = $mailer->emails;
+$force_block_editor = static fn() => 'yes';
+add_filter( 'pre_option_woocommerce_feature_block_email_editor_enabled', $force_block_editor );
+try {
+	$processing = new WC_Email_Customer_Processing_Order();
+	$new_account = new WC_Email_Customer_New_Account();
+	commerce_check( true === $processing->block_email_editor_enabled && true === $new_account->block_email_editor_enabled, 'The in-memory feature probe did not enable core block emails.' );
+	$filtered_emails = apply_filters( 'woocommerce_email_classes', array( 'WC_Email_Customer_Processing_Order' => $processing, 'WC_Email_Customer_New_Account' => $new_account ) );
+	$processing = $filtered_emails['WC_Email_Customer_Processing_Order'];
+	$new_account = $filtered_emails['WC_Email_Customer_New_Account'];
+	commerce_check( false === $processing->block_email_editor_enabled && true === $new_account->block_email_editor_enabled, 'Source binding did not disable only its own block email.' );
+	$eligible = apply_filters( 'woocommerce_transactional_emails_for_block_editor', array( $processing->id, $new_account->id ) );
+	commerce_check( array( $new_account->id ) === $eligible, 'The editor exposed a source-bound email or hid an unbound email.' );
+	$mailer->emails['WC_Email_Customer_Processing_Order'] = $processing;
+	foreach ( array_keys( $store['emails'] ) as $email_id ) {
+		$rendered = commerce_result( $plugin->emails->render_order( $order->get_id(), $email_id ) );
+		commerce_check( str_contains( $rendered['html'], 'Test order' ) && str_contains( $rendered['html'], 'https://store.example.test/brand.png' ) && ! str_contains( $rendered['html'], '<sf-' ), 'Native trigger omitted template, canonical URL, slot contents or test banner.' );
+		commerce_check( ! str_contains( $rendered['html'], get_option( 'home' ) ) && ( 'new_order' === $email_id || str_contains( $rendered['html'], 'download_file=' ) ), 'Native email download used a request host instead of canonical origin.' );
+	}
+} finally {
+	$mailer->emails = $previous_emails;
+	remove_filter( 'pre_option_woocommerce_feature_block_email_editor_enabled', $force_block_editor );
 }
 wp_set_current_user( $administrator->ID );
 $expires = time() + 3600;
@@ -308,6 +461,7 @@ $context = array(
 	'bundle' => $directory, 'testOrders' => array( $order->get_id(), $interrupted->get_id() ), 'stockBeforeOrders' => 47,
 	'orderCount' => SpacefastCommerce\Orders::count(), 'buyerEmail' => $order->get_billing_email(),
 	'downloadUrl' => $after['download_url'], 'downloadSha256' => hash( 'sha256', $replacement ),
+	'orderReceivedUrl' => $order->get_checkout_order_received_url(),
 	'origin' => get_option( 'home' ),
 	'shippingZoneId' => $plugin->shipping->zone_id(),
 	'adminCookie' => AUTH_COOKIE . '=' . $auth_cookie . '; ' . LOGGED_IN_COOKIE . '=' . $logged_cookie,
