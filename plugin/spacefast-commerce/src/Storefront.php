@@ -59,7 +59,7 @@ final class Storefront {
 
 	/** Guest shoppers need their order links; hosts that allow passwords keep Woo's login. */
 	public function account_login_template( string $template, string $name ): string {
-		return 'myaccount/form-login.php' === $name && MerchantAccess::password_login_disabled()
+		return in_array( $name, array( 'myaccount/form-login.php', 'myaccount/form-lost-password.php', 'myaccount/form-reset-password.php' ), true ) && MerchantAccess::password_login_disabled()
 			? dirname( __DIR__ ) . '/templates/guest-account.php'
 			: $template;
 	}

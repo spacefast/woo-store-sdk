@@ -88,7 +88,7 @@ final class ManagedProducts {
 			return $response;
 		}
 		$changed = false;
-		if ( preg_match( '#^/wc/v[1-4]/settings/[^/]+/([^/]+)/?$#', $request->get_route(), $match ) && current_user_can( 'manage_woocommerce' ) ) {
+		if ( preg_match( '#^/wc/v[1-4]/settings/(?:[^/]+/)?([^/]+)/?$#', $request->get_route(), $match ) && current_user_can( 'manage_woocommerce' ) ) {
 			// Woo's batch controller calls update_item directly, without another REST dispatch.
 			$updates = 'batch' === $match[1] ? $request->get_param( 'update' ) : array( array( 'id' => $request->get_param( 'id' ), 'value' => $request->get_param( 'value' ) ) );
 			foreach ( is_array( $updates ) ? $updates : array() as $update ) {

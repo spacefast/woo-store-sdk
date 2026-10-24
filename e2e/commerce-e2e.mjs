@@ -358,5 +358,22 @@ if (process.env.COMMERCE_ENGINE_ROOT) {
   docker('cp', `${path.resolve(process.env.COMMERCE_ENGINE_ROOT)}/.`, `${container}:/tmp/commerce-engine`);
   docker('cp', 'e2e/commerce-engine-contract.php', `${container}:/tmp/commerce-engine-contract.php`);
   wp('eval-file', '/tmp/commerce-engine-contract.php');
+  // The real engine's login_init hook must run before core renders password recovery.
+  const loginFixture = '/var/www/html/wp-content/mu-plugins/commerce-test-runtime-login.php';
+  docker('exec', container, 'php', '-r', `file_put_contents($argv[1], '<?php $GLOBALS["SPACEFAST_CONTENT_WOO"] = true; require "/tmp/commerce-engine/wordpress/commerce.php";');`, loginFixture);
+  try {
+    const origin = execFileSync('docker', [...wpArgs, 'option', 'get', 'home'], { encoding: 'utf8' }).trim();
+    for (const action of ['lostpassword', 'rp']) {
+      const url = new URL('/wp-login.php', origin);
+      url.searchParams.set('action', action);
+      url.searchParams.set('redirect_to', new URL('/wp-admin/admin.php?page=wc-settings&tab=checkout', origin).href);
+      const response = await request(url);
+      assert.equal(response.status, 302);
+      assert.equal(response.headers.get('location'), '/__spacefast/access/account?return=%2Fwp-admin%2Fadmin.php%3Fpage%3Dwc-settings%26tab%3Dcheckout');
+      assert.match(response.headers.get('cache-control'), /private, no-store/);
+    }
+  } finally {
+    docker('exec', container, 'rm', loginFixture);
+  }
 }
 console.log('PASS: M1 companion native contract');
