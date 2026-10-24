@@ -12,6 +12,10 @@ namespace WooStorefront;
 /** Payment, including a webhook, may clear only the unchanged cart handed to checkout. */
 final class CheckoutCart {
 	public function register(): void {
+		add_action( 'woocommerce_cart_loaded_from_session', array( $this, 'initialize_source' ), 10, 0 );
+		foreach ( array( 'woocommerce_add_to_cart', 'woocommerce_after_cart_item_quantity_update', 'woocommerce_cart_item_removed', 'woocommerce_cart_item_restored', 'woocommerce_cart_emptied', 'woocommerce_applied_coupon', 'woocommerce_removed_coupon' ) as $hook ) {
+			add_action( $hook, array( $this, 'mark_source_change' ), 10, 0 );
+		}
 		add_action( 'template_redirect', array( $this, 'capture_source' ), 4 );
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'remember_source' ) );
 		add_action( 'woocommerce_checkout_order_processed', function ( int $id ): void {
@@ -28,6 +32,20 @@ final class CheckoutCart {
 		}, 10, 3 );
 	}
 
+	/** Seed older carts once; reads must not advance their mutation identity. */
+	public function initialize_source(): void {
+		if ( WC()->session && ! WC()->session->get( 'woo_storefront_cart_revision' ) ) {
+			$this->mark_source_change();
+		}
+	}
+
+	/** A cart changed away and back is still a newer cart, even if its hash matches. */
+	public function mark_source_change(): void {
+		if ( WC()->session && ! WC()->session->get( 'previous_customer_id' ) ) {
+			WC()->session->set( 'woo_storefront_cart_revision', wp_generate_uuid4() );
+		}
+	}
+
 	/** Woo's clone already carries the cart snapshot, without the source's customer details. */
 	public function capture_source(): void {
 		if ( ! is_checkout() || is_wc_endpoint_url() || ! WC()->session || WC()->session->get( 'woo_storefront_source_cart' ) ) {
@@ -35,8 +53,9 @@ final class CheckoutCart {
 		}
 		$id = WC()->session->get( 'previous_customer_id' );
 		$cart = WC()->session->get( 'cart' );
-		if ( is_string( $id ) && str_starts_with( $id, 't_' ) && is_array( $cart ) && array() !== $cart ) {
-			WC()->session->set( 'woo_storefront_source_cart', array( 'id' => $id, 'hash' => hash( 'sha256', serialize( $cart ) ) ) );
+		$revision = WC()->session->get( 'woo_storefront_cart_revision' );
+		if ( is_string( $id ) && str_starts_with( $id, 't_' ) && is_array( $cart ) && array() !== $cart && is_string( $revision ) ) {
+			WC()->session->set( 'woo_storefront_source_cart', array( 'id' => $id, 'hash' => hash( 'sha256', serialize( $cart ) ), 'revision' => $revision ) );
 		}
 	}
 
@@ -56,7 +75,7 @@ final class CheckoutCart {
 			return;
 		}
 		$source = $order->get_meta( '_woo_storefront_source_cart' );
-		if ( ! is_array( $source ) || ! is_string( $source['id'] ?? null ) || ! str_starts_with( $source['id'], 't_' ) || ! is_string( $source['hash'] ?? null ) ) {
+		if ( ! is_array( $source ) || ! is_string( $source['id'] ?? null ) || ! str_starts_with( $source['id'], 't_' ) || ! is_string( $source['hash'] ?? null ) || ! is_string( $source['revision'] ?? null ) ) {
 			return;
 		}
 		global $wpdb;
@@ -68,7 +87,8 @@ final class CheckoutCart {
 		}
 		$data = is_string( $value ) ? maybe_unserialize( $value ) : null;
 		$cart = is_array( $data ) ? maybe_unserialize( $data['cart'] ?? null ) : null;
-		if ( is_array( $cart ) && hash_equals( $source['hash'], hash( 'sha256', serialize( $cart ) ) ) ) {
+		$revision = is_array( $data ) ? maybe_unserialize( $data['woo_storefront_cart_revision'] ?? null ) : null;
+		if ( is_string( $revision ) && hash_equals( $source['revision'], $revision ) && is_array( $cart ) && hash_equals( $source['hash'], hash( 'sha256', serialize( $cart ) ) ) ) {
 			// Woo has no conditional session-delete API. Compare the complete stored
 			// bytes so even a concurrent address/cart edit wins over this cleanup.
 			$deleted = $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE session_key = %s AND BINARY session_value = BINARY %s', $table, $source['id'], $value ) );
