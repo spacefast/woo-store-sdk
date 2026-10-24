@@ -219,6 +219,42 @@ clean_post_cache( $checkout_id );
 commerce_result( $plugin->catalog->apply( commerce_bundle( $store ), $options ) );
 commerce_check( has_block( 'woocommerce/checkout-contact-information-block', get_post_field( 'post_content', $checkout_id ) ), 'Checkout repair did not restore the native form blocks.' );
 commerce_check( 'no' === get_option( 'woocommerce_enable_myaccount_registration' ) && 'yes' === get_option( 'woocommerce_enable_guest_checkout' ), 'Native checkout created a customer signup path.' );
+$signup_email = 'blocked-' . wp_generate_uuid4() . '@example.test';
+$signup = new WP_REST_Request( 'POST', '/woo-storefront/v1/auth/register' );
+$signup->set_param( 'email', $signup_email );
+$signup->set_param( 'password', 'disposable-registration-probe' );
+$signup_response = rest_do_request( $signup );
+$created_customer = get_user_by( 'email', $signup_email );
+if ( $created_customer ) {
+	require_once ABSPATH . 'wp-admin/includes/user.php';
+	wp_delete_user( $created_customer->ID );
+}
+commerce_check( 403 === $signup_response->get_status() && 'woo_storefront_registration_disabled' === ( $signup_response->get_data()['code'] ?? null ) && false === $created_customer, 'Disabled registration created a customer or returned the wrong refusal: ' . $signup_response->get_status() );
+$enable_registration = static fn() => 'yes';
+add_filter( 'pre_option_woocommerce_enable_myaccount_registration', $enable_registration, PHP_INT_MAX );
+try {
+	$signup_response = rest_do_request( $signup );
+	$created_customer = get_user_by( 'email', $signup_email );
+	commerce_check( 201 === $signup_response->get_status() && $created_customer instanceof WP_User, 'Explicitly enabled registration did not create its customer.' );
+} finally {
+	remove_filter( 'pre_option_woocommerce_enable_myaccount_registration', $enable_registration, PHP_INT_MAX );
+	if ( $created_customer instanceof WP_User ) {
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		wp_delete_user( $created_customer->ID );
+	}
+	wp_set_current_user( 0 );
+}
+$account_document = new DOMDocument();
+commerce_check( $account_document->loadHTML( wc_get_template_html( 'myaccount/form-login.php' ), LIBXML_NOERROR | LIBXML_NOWARNING ), 'Native account view did not render.' );
+commerce_check( 1 === ( new DOMXPath( $account_document ) )->query( '//input[@type="password"]' )->length, 'A host that permits passwords lost its native login.' );
+add_filter( 'spacefast_commerce_refuse_password_login', '__return_true' );
+try {
+	commerce_check( $account_document->loadHTML( wc_get_template_html( 'myaccount/form-login.php' ), LIBXML_NOERROR | LIBXML_NOWARNING ), 'Guest account view did not render.' );
+	$account_nodes = new DOMXPath( $account_document );
+	commerce_check( 0 === $account_nodes->query( '//input[@type="password"]' )->length && 'No account needed' === $account_nodes->query( '//h1' )->item( 0 )?->textContent && $plugin->store->url( '/' ) === $account_nodes->query( '//a' )->item( 0 )?->getAttribute( 'href' ), 'Password-disabled shoppers saw a dead login form or lost their store link.' );
+} finally {
+	remove_filter( 'spacefast_commerce_refuse_password_login', '__return_true' );
+}
 commerce_check( 'https://store.example.test/books/field-guide/' === get_permalink( $book_id ), 'Native product link did not point to the storefront page.' );
 
 $make_order = static function ( bool $interrupted ) use ( $book_id, $print_id, $key ): WC_Order {
@@ -331,10 +367,36 @@ commerce_check( $book_id === wc_get_product_id_by_sku( $digital['key'] ) && 'pub
 $unmanaged->delete( true );
 
 unset( $_SERVER['HTTP_HOST'] );
-foreach ( array_keys( $store['emails'] ) as $email_id ) {
-	$rendered = commerce_result( $plugin->emails->render_order( $order->get_id(), $email_id ) );
-	commerce_check( str_contains( $rendered['html'], 'Test order' ) && str_contains( $rendered['html'], 'https://store.example.test/brand.png' ) && ! str_contains( $rendered['html'], '<sf-' ), 'Native trigger omitted template, canonical URL, slot contents or test banner.' );
-	commerce_check( ! str_contains( $rendered['html'], get_option( 'home' ) ) && ( 'new_order' === $email_id || str_contains( $rendered['html'], 'download_file=' ) ), 'Native email download used a request host instead of canonical origin.' );
+$plugin->emails->store( array() );
+try {
+	$native_email = commerce_result( $plugin->emails->render_order( $order->get_id(), 'customer_processing_order' ) );
+	commerce_check( str_contains( $native_email['html'], current( $order->get_items() )->get_name() ) && ! str_contains( $native_email['html'], 'https://store.example.test/brand.png' ), 'Removing an email binding did not restore native content under a warm template cache.' );
+} finally {
+	$plugin->emails->store( $store['emails'] );
+}
+$mailer = WC()->mailer();
+$previous_emails = $mailer->emails;
+$force_block_editor = static fn() => 'yes';
+add_filter( 'pre_option_woocommerce_feature_block_email_editor_enabled', $force_block_editor );
+try {
+	$processing = new WC_Email_Customer_Processing_Order();
+	$new_account = new WC_Email_Customer_New_Account();
+	commerce_check( true === $processing->block_email_editor_enabled && true === $new_account->block_email_editor_enabled, 'The in-memory feature probe did not enable core block emails.' );
+	$filtered_emails = apply_filters( 'woocommerce_email_classes', array( 'WC_Email_Customer_Processing_Order' => $processing, 'WC_Email_Customer_New_Account' => $new_account ) );
+	$processing = $filtered_emails['WC_Email_Customer_Processing_Order'];
+	$new_account = $filtered_emails['WC_Email_Customer_New_Account'];
+	commerce_check( false === $processing->block_email_editor_enabled && true === $new_account->block_email_editor_enabled, 'Source binding did not disable only its own block email.' );
+	$eligible = apply_filters( 'woocommerce_transactional_emails_for_block_editor', array( $processing->id, $new_account->id ) );
+	commerce_check( array( $new_account->id ) === $eligible, 'The editor exposed a source-bound email or hid an unbound email.' );
+	$mailer->emails['WC_Email_Customer_Processing_Order'] = $processing;
+	foreach ( array_keys( $store['emails'] ) as $email_id ) {
+		$rendered = commerce_result( $plugin->emails->render_order( $order->get_id(), $email_id ) );
+		commerce_check( str_contains( $rendered['html'], 'Test order' ) && str_contains( $rendered['html'], 'https://store.example.test/brand.png' ) && ! str_contains( $rendered['html'], '<sf-' ), 'Native trigger omitted template, canonical URL, slot contents or test banner.' );
+		commerce_check( ! str_contains( $rendered['html'], get_option( 'home' ) ) && ( 'new_order' === $email_id || str_contains( $rendered['html'], 'download_file=' ) ), 'Native email download used a request host instead of canonical origin.' );
+	}
+} finally {
+	$mailer->emails = $previous_emails;
+	remove_filter( 'pre_option_woocommerce_feature_block_email_editor_enabled', $force_block_editor );
 }
 wp_set_current_user( $administrator->ID );
 $expires = time() + 3600;

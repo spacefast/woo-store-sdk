@@ -91,10 +91,14 @@ Layouts must begin with `<!doctype html>`, fit within 100 KiB and contain no scr
 event handlers, JavaScript URLs or other `sf-*` slots. Stored HTML is data and is never
 executed. Woo keeps native triggers, recipients, subjects, headings, CSS inlining and text mail.
 All links use the canonical origin, including sends from cron and WP-CLI without a request host.
+Bindings are selected after Woo's cached template lookup, so adding or removing a layout takes
+effect on the next render without retaining an earlier native or source-owned template path.
 
 On Spacefast, the companion extends the engine's request principal with named Woo capabilities.
 It grants no plugin/theme installation, user administration or `manage_options`, and password
-sign-in is disabled. On ordinary WordPress hosts, native administrator authentication remains.
+sign-in is disabled, and the guest account page points shoppers to their order links instead
+of showing a password form. On ordinary WordPress hosts, native administrator authentication
+and its account login form remain.
 
 ## Verification and packaging
 

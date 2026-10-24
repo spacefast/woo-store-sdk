@@ -41,7 +41,13 @@ $woo_storefront_type     = $woo_storefront_branding['typography'];
 		.woo-storefront-shell { box-sizing: border-box; margin: 0 auto; max-width: 1200px; padding: 32px 20px 64px; }
 		.woo-storefront-logo { display: block; height: auto; margin: 0 auto 32px; max-height: 72px; max-width: min(260px, 80vw); }
 		.woo-storefront-name { display: block; margin: 0 auto 32px; text-align: center; color: inherit; font-size: 24px; text-decoration: none; }
-		.wc-block-components-button:not(.is-link) { --wp-components-color-accent: var(--woo-storefront-primary); }
+		.woo-storefront-shell .wc-block-components-button:not(.is-link),
+		.woo-storefront-checkout .woo-storefront-shell .button {
+			--wp-components-color-accent: var(--woo-storefront-primary);
+			background-color: var(--woo-storefront-primary);
+			border-color: var(--woo-storefront-primary);
+			color: #fff;
+		}
 	</style>
 </head>
 <body <?php body_class( 'woo-storefront-checkout' ); ?>>

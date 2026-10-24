@@ -51,9 +51,17 @@ final class Storefront {
 		add_filter( 'pre_trash_post', array( $this, 'guard_delete' ), 10, 2 );
 		add_filter( 'pre_delete_post', array( $this, 'guard_delete' ), 10, 2 );
 		add_filter( 'woocommerce_get_cart_url', fn (): string => $this->store->url( '/cart/' ) );
+		add_filter( 'wc_get_template', array( $this, 'account_login_template' ), 10, 2 );
 		add_filter( 'post_type_link', array( $this, 'product_link' ), 10, 2 );
 		add_action( 'template_redirect', array( $this, 'redirect' ), 2 );
 		add_action( 'template_redirect', array( $this, 'not_found' ), 99 );
+	}
+
+	/** Guest shoppers need their order links; hosts that allow passwords keep Woo's login. */
+	public function account_login_template( string $template, string $name ): string {
+		return 'myaccount/form-login.php' === $name && MerchantAccess::password_login_disabled()
+			? dirname( __DIR__ ) . '/templates/guest-account.php'
+			: $template;
 	}
 
 	private function page_id( array $page ): int {
