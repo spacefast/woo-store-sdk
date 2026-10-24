@@ -28,25 +28,29 @@ export interface PreviewCatalogProduct {
 }
 
 /**
- * Reads the engine's `/__spacefast/commerce.json`. Anything but an explicit
- * `{ "source": "preview" }` (a 404 on a plain WordPress host, a network error,
- * a malformed body) means the live store.
+ * Reads the engine's `/__spacefast/commerce.json`. A missing endpoint on a plain
+ * WordPress host means store. An unavailable or invalid classification is an error.
  */
 export async function detectCommerceSource(fetchImpl: typeof fetch, url: string): Promise<CommerceSource> {
+  let response: Response
   try {
-    const response = await fetchImpl(url, {
+    response = await fetchImpl(url, {
       cache: 'no-store',
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
     })
-    if (!response.ok) return 'store'
-    const body: unknown = await response.json()
-    return typeof body === 'object' && body !== null && (body as { source?: unknown }).source === 'preview'
-      ? 'preview'
-      : 'store'
   } catch {
-    return 'store'
+    throw new StoreApiError('The storefront source could not be reached. Try again.', 503, 'commerce_source_unavailable')
   }
+  if (response.status === 404) return 'store'
+  if (!response.ok) {
+    throw new StoreApiError('The storefront source could not be loaded. Try again.', response.status, 'commerce_source_unavailable')
+  }
+  const body: unknown = await response.json().catch(() => null)
+  if (typeof body === 'object' && body !== null && 'source' in body && (body.source === 'store' || body.source === 'preview')) {
+    return body.source
+  }
+  throw new StoreApiError('The storefront source response is invalid. Try again.', 502, 'commerce_source_invalid')
 }
 
 function isCatalog(value: unknown): value is PreviewCatalog {

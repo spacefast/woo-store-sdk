@@ -88,6 +88,7 @@ export class BrowserTransport {
       this.fetchImpl,
       this.resolve(this.options.commerceConfigPath ?? '/__spacefast/commerce.json'),
     )
+    this.sourcePromise.catch(() => { this.sourcePromise = null })
     return this.sourcePromise
   }
 

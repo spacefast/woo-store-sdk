@@ -86,15 +86,31 @@ describe('store source', () => {
     expect(order.shippingAddress).toMatchObject({ address1: 'Ul. Prosta 1', city: 'Warszawa', country: 'PL' })
   })
 
-  it('treats a missing or failing commerce.json as the store', async () => {
+  it('treats only a missing commerce.json as the store and surfaces failed classification', async () => {
     const missing = adapter(createFakeWoo({ commerce: null }))
     await expect(missing.source()).resolves.toBe('store')
 
+    let online = false
     const offline = new BrowserTransport({
       url: WOO_ORIGIN,
-      fetch: async () => { throw new TypeError('Failed to fetch') },
+      fetch: async () => {
+        if (!online) throw new TypeError('Failed to fetch')
+        return Response.json({ source: 'preview' })
+      },
     })
-    await expect(offline.source()).resolves.toBe('store')
+    await expect(offline.source()).rejects.toMatchObject({ status: 503, code: 'commerce_source_unavailable' })
+    online = true
+    await expect(offline.source()).resolves.toBe('preview')
+    for (const response of [
+      new Response('Unavailable', { status: 503 }),
+      new Response('Not JSON', { status: 200 }),
+      Response.json({ source: 'unknown' }),
+    ]) {
+      const broken = new BrowserTransport({ url: WOO_ORIGIN, fetch: async () => response })
+      await expect(broken.query('cart.get')).rejects.toMatchObject({
+        code: response.status === 503 ? 'commerce_source_unavailable' : 'commerce_source_invalid',
+      })
+    }
   })
 })
 

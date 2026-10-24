@@ -61,7 +61,8 @@ On first use, the adapter reads `/__spacefast/commerce.json` once:
   `/_spacefast/catalog.json`. Every cart and order operation throws
   `CheckoutOffInPreviewError` (`code: 'checkout_off_in_preview'`). Check it with
   `isCheckoutOffInPreview(error)` and show "Checkout is off in previews".
-- Anything else, including a 404 or a network error: the live store.
+- A 404 from a host without the endpoint: the live store.
+- A network failure, other HTTP error or invalid body: a typed source error. Retry before showing store actions.
 
 `transport.source()` resolves to `'store'` or `'preview'`. Use it to swap the
 add-to-cart button before anyone clicks. Pass `source: 'store'` to skip the
