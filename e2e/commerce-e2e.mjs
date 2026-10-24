@@ -103,8 +103,14 @@ for (const storage of ['no', 'yes']) {
     const cartEndpoint = new URL('/wp-json/wc/store/v1/cart', context.origin);
     const fresh = await request(cartEndpoint);
     assert.equal(fresh.status, 200);
-    const token = fresh.headers.get('cart-token');
-    assert.ok(token, 'Native Store API did not issue a guest cart token');
+    const initialToken = fresh.headers.get('cart-token');
+    assert.ok(initialToken, 'Native Store API did not issue a guest cart token');
+    const tokenClaims = (value) => JSON.parse(Buffer.from(value.split('.')[1], 'base64url').toString());
+    const sourceId = tokenClaims(initialToken).user_id;
+    assert.match(sourceId, /^t_[a-zA-Z0-9]+$/);
+    // Force a valid earlier expiry through Woo's issuer. A later Store API
+    // response renews it even when the entire handoff runs within one second.
+    const token = execFileSync('docker', [...wpArgs, 'eval', `add_filter('wc_session_expiration', static fn() => HOUR_IN_SECONDS); echo \\Automattic\\WooCommerce\\StoreApi\\Utilities\\CartTokenUtils::get_cart_token(${JSON.stringify(sourceId)});`], { encoding: 'utf8' }).trim();
     const cartRequest = async (suffix = '', options = {}) => {
       const response = await request(new URL(cartEndpoint.pathname + suffix, context.origin), {
         ...options, headers: { 'Cart-Token': token, 'Content-Type': 'application/json', ...options.headers },
@@ -145,7 +151,10 @@ for (const storage of ['no', 'yes']) {
     const entry = await browserRequest(safeCart.checkout_url);
     assert.equal(entry.status, 302);
     const checkout = new URL(entry.headers.get('location'));
-    assert.equal(checkout.searchParams.get('session'), token);
+    const handoffToken = decodeURIComponent(new URL(safeCart.checkout_url).pathname.match(/\/checkout\/c\/([^/]+)\/?$/)?.[1] ?? '');
+    assert.notEqual(handoffToken, token, 'The native issuer did not renew the earlier token expiry');
+    assert.equal(tokenClaims(handoffToken).user_id, sourceId);
+    assert.equal(checkout.searchParams.get('session'), handoffToken);
     const cloned = await browserRequest(checkout);
     assert.equal(cloned.status, 200, await cloned.clone().text());
     let cookies = cloned.headers.getSetCookie().map((cookie) => cookie.split(';')[0]).join('; ');
@@ -155,7 +164,7 @@ for (const storage of ['no', 'yes']) {
     assert.deepEqual((await browserCart.json()).items.map((item) => item.id), cart.items.map((item) => item.id));
     const browserToken = browserCart.headers.get('cart-token');
     assert.ok(browserToken);
-    assert.notEqual(browserToken.split('.')[1], token.split('.')[1], 'Checkout reused the source cart session');
+    assert.notEqual(tokenClaims(browserToken).user_id, sourceId, 'Checkout reused the source cart session');
     const address = await request(new URL(cartEndpoint.pathname + '/update-customer', context.origin), {
       method: 'POST', headers: { 'Cart-Token': browserToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ billing_address: { email: 'private-checkout@example.test', first_name: 'Private buyer' } }),
